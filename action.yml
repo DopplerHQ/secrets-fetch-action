@@ -1,0 +1,14 @@
+name: 'Fetch Doppler Secrets'
+description: 'Fetch Doppler secrets for a specific Project and Config'
+branding:
+  icon: 'lock'
+  color: 'blue'
+inputs:
+  doppler-token:
+    description: >-
+      Doppler Service Token that grants access to a single Config within a Project. 
+      See https://docs.doppler.com/docs/service-tokens
+    required: true
+runs:
+  using: 'node16'
+  main: 'index.js'
