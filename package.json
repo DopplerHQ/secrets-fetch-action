@@ -1,0 +1,24 @@
+{
+    "name": "doppler-secrets-fetch-github-action",
+    "version": "1.0.0",
+    "description": "GitHub Action to fetch secrets from Doppler's API",
+    "author": "Doppler",
+    "license": "Apache-2.0",
+    "bugs": {
+        "url": "https://github.com/DopplerUniversity/secrets-fetch-action/issues"
+    },
+    "main": "index.js",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/DopplerUniversity/secrets-fetch-action"
+    },
+    "type": "module",
+    "scripts": {
+        "test": "node index.js"
+    },
+    "keywords": [],
+    "homepage": "https://github.com/DopplerUniversity/#readme",
+    "dependencies": {
+        "@actions/core": "^1.8.0"
+    }
+}
