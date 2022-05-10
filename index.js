@@ -22,4 +22,8 @@ for (const [key, value] of Object.entries(secrets)) {
   if (!DOPPLER_META.includes(key)) {
     core.setSecret(value);
   }
+
+  if (core.getInput("inject-env-vars")) {
+    core.exportVariable(key, value);
+  }
 }

@@ -12,11 +12,17 @@ Create a GitHub repository secret named `DOPPLER_TOKEN` or if using multiple Ser
 
 ## Usage
 
+Secrets can be accessed in two ways:
 
-Secrets can be accessed individually using `outputs` by providing an `id` for the Doppler action step.
+- Default: Using `outputs`
+- Optional: Using environment variables
+
+### Using Outputs
+
+Secrets can be accessed individually using `outputs` by providing an `id` for the Doppler action step:
 
 ```yaml
-name: Doppler secrets fetch using Outputs
+name: Doppler secrets from outputs
 
 on: [push]
 
@@ -31,6 +37,32 @@ jobs:
     - run: echo "DOPPLER_PROJECT is ${{ steps.doppler.outputs.DOPPLER_PROJECT }} (Doppler meta environment variables are unmasked)"
     - run: echo "API_KEY is ${{ steps.doppler.outputs.API_KEY }} (secret masked output)"
 ```
+
+### Using Environment Variables
+
+This option injects secrets as environment variables for use in subsequent steps by setting the `inject-env-vars` input to `true`.
+
+> NOTE: Be careful using this option as environment variables are available to any subsequent process in your GitHub Action steps.
+
+```yaml
+name: Doppler secrets from environment variables
+
+on: [push]
+
+jobs:
+  secrets-fetch:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: doppleruniversity/secrets-fetch-action@v0.0.1
+      id: doppler
+      with:
+        doppler-token: ${{ secrets.DOPPLER_TOKEN }}
+        inject-env-vars: true
+    - run: echo "DOPPLER_PROJECT is ${{ env.DOPPLER_PROJECT }} (Doppler meta environment variables are unmasked)"
+    - run: echo "API_KEY is ${{ env.API_KEY }}  (secret masked output)"
+```
+
+## Automatic Secrets Masking
 
 All secret values are masked with the exception of the Doppler meta variables:
 

@@ -9,6 +9,10 @@ inputs:
       Doppler Service Token that grants access to a single Config within a Project. 
       See https://docs.doppler.com/docs/service-tokens
     required: true
+  inject-env-vars:
+    description: >-
+      Inject secrets as environment variables for subsequent steps if set to `true`.
+    required: false
 runs:
   using: 'node16'
   main: 'index.js'
