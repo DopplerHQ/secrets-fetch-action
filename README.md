@@ -58,6 +58,7 @@ jobs:
       with:
         doppler-token: ${{ secrets.DOPPLER_TOKEN }}
         inject-env-vars: true
+    # TODO(review): It might be helpful to do `printenv` here to show off the env vars? Will they be available immediately or only in later steps?
     - run: echo "DOPPLER_PROJECT is ${{ env.DOPPLER_PROJECT }} (Doppler meta environment variables are unmasked)"
     - run: echo "API_KEY is ${{ env.API_KEY }}  (secret masked output)"
 ```

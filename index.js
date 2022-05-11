@@ -23,6 +23,9 @@ for (const [key, value] of Object.entries(secrets)) {
     core.setSecret(value);
   }
 
+  // TODO(review): Should we be checking explicitly for `=== "true"` here?
+  // Alternatively, I believe we can specify `type: boolean` in the `action.yml`.
+  // Either way, we should make sure that if a user does `inject-env-vars: false` in an attempt to be explicit, we don't accidentally treat that as a `true`.
   if (core.getInput("inject-env-vars")) {
     core.exportVariable(key, value);
   }
