@@ -1,0 +1,9 @@
+rules:
+  - id: eval-search
+    severity: ERROR
+    languages:
+      - javascript
+      - typescript
+    message: eval() is evil
+    patterns:
+      - pattern: eval(...)

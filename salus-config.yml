@@ -19,7 +19,7 @@ enforced_scanners: "all"
 scanner_configs:
   Semgrep:
     matches:
-      - config: ../semgrep_configs/eval.yaml
+      - config: semgrep_configs/eval.yaml
         forbidden: true
         exclude:
           - node_modules
