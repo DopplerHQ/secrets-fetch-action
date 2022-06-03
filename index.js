@@ -23,7 +23,7 @@ for (const [key, value] of Object.entries(secrets)) {
     core.setSecret(value);
   }
 
-  if (core.getInput("inject-env-vars")) {
+  if (core.getInput("inject-env-vars") === "true") {
     core.exportVariable(key, value);
   }
 }

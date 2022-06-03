@@ -58,8 +58,7 @@ jobs:
       with:
         doppler-token: ${{ secrets.DOPPLER_TOKEN }}
         inject-env-vars: true
-    - run: echo "DOPPLER_PROJECT is ${{ env.DOPPLER_PROJECT }} (Doppler meta environment variables are unmasked)"
-    - run: echo "API_KEY is ${{ env.API_KEY }}  (secret masked output)"
+    - run: printenv
 ```
 
 ## Automatic Secrets Masking
