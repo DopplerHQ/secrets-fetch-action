@@ -6,9 +6,38 @@ This action enables you to fetch Doppler secrets for use in your GitHub Actions.
 
 ## Configuration
 
-This action requires a [Doppler Service Token](https://docs.doppler.com/docs/service-tokens) to provide read-only access to secrets for a specific Config within a [Project](https://docs.doppler.com/docs/create-project).
+The action can be configured in two ways:
+
+* Service Token (recommended)
+* Personal Token with Project and Config
+
+### Service Token
+
+A [Doppler Service Token](https://docs.doppler.com/docs/service-tokens) provides read-only access to single config and is recommended due to its limited access scope.
 
 Create a GitHub repository secret named `DOPPLER_TOKEN` or if using multiple Service Tokens (e.g. for a Monorepo), you can prefix the secret name using with application name, e.g. `AUTH_API_DOPPLER_TOKEN`.
+
+Then supply the Service Token using the `doppler-token` input:
+
+```yaml
+- uses: dopplerhq/secrets-fetch-action@v1.1.0
+      id: doppler
+      with:
+        doppler-token: ${{ secrets.DOPPLER_TOKEN }}
+```
+
+### Personal Token
+
+A Doppler Personal Token provides read/write access to every Project and Config accessible for that account and should only be used when necessary. The `doppler-project` and `doppler-config` inputs must be provided when using a Personal Token:
+
+```yaml
+- uses: dopplerhq/secrets-fetch-action@v1.1.0
+      id: doppler
+      with:
+        doppler-token: ${{ secrets.PERSONAL_DOPPLER_TOKEN }}
+        project: auth-api
+        config: ci-cd
+```
 
 ## Usage
 
@@ -30,7 +59,7 @@ jobs:
   secrets-fetch:
     runs-on: ubuntu-latest
     steps:
-    - uses: doppleruniversity/secrets-fetch-action@v1
+    - uses: dopplerhq/secrets-fetch-action@v1.1.0
       id: doppler
       with:
         doppler-token: ${{ secrets.DOPPLER_TOKEN }}
@@ -53,7 +82,7 @@ jobs:
   secrets-fetch:
     runs-on: ubuntu-latest
     steps:
-    - uses: doppleruniversity/secrets-fetch-action@v0.0.1
+    - uses: dopplerhq/secrets-fetch-action@v1.1.0
       id: doppler
       with:
         doppler-token: ${{ secrets.DOPPLER_TOKEN }}
@@ -68,3 +97,7 @@ All secret values are masked with the exception of the Doppler meta variables:
 - `DOPPLER_PROJECT`
 - `DOPPLER_ENVIRONMENT`
 - `DOPPLER_CONFIG`
+
+# Development and Testing
+
+Export the `NODE_ENV` and `DOPPLER_TOKEN` environment variables, then run `npm test`.

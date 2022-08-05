@@ -9,6 +9,14 @@ inputs:
       Doppler Service Token that grants access to a single Config within a Project. 
       See https://docs.doppler.com/docs/service-tokens
     required: true
+  doppler-project:
+    description: >-
+      Doppler Project
+    required: false
+  doppler-config:
+    description: >-
+      Doppler Config slug (e.g. prd)
+    required: false
   inject-env-vars:
     description: >-
       Inject secrets as environment variables for subsequent steps if set to `true`.

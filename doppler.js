@@ -1,19 +1,29 @@
+import { setCommandEcho } from "@actions/core";
 import https from "https";
-import { VERSION } from './meta.js'
+import { VERSION } from "./meta.js";
 
 /**
- * Fetch secrets from Doppler the API.
- * Requires the `DOPPLER_TOKEN` environment variable to be set. See https://docs.doppler.com/docs/enclave-service-tokens
+ * Fetch secrets from Doppler the API
+ * @param {string} dopplerToken
+ * @param {string} [dopplerProject]
+ * @param {string} [dopplerConfig]
  * @returns {() => Promise<Record<string, string>>}
  */
-async function fetch(dopplerToken) {
+async function fetch(dopplerToken, dopplerProject, dopplerConfig) {
   return new Promise(function (resolve, reject) {
     const encodedAuthData = Buffer.from(`${dopplerToken}:`).toString("base64");
     const authHeader = `Basic ${encodedAuthData}`;
     const userAgent = `secrets-fetch-github-action/${VERSION}`;
+
+    const url = new URL("https://api.doppler.com/v3/configs/config/secrets/download?format=json");
+    if (dopplerProject && dopplerConfig) {
+      url.searchParams.append("project", dopplerProject);
+      url.searchParams.append("config", dopplerConfig);
+    }
+
     https
       .get(
-        "https://api.doppler.com/v3/configs/config/secrets/download?format=json",
+        url.href,
         {
           headers: {
             Authorization: authHeader,
@@ -44,5 +54,4 @@ async function fetch(dopplerToken) {
   });
 }
 
-export default fetch
-
+export default fetch;
