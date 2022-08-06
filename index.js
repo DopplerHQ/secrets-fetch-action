@@ -14,7 +14,7 @@ const DOPPLER_TOKEN = core.getInput("doppler-token", { required: true });
 core.setSecret(DOPPLER_TOKEN);
 
 // Project and Config are required if a Personal token supplied
-const IS_PERSONAL_TOKEN = DOPPLER_TOKEN.indexOf("dp.pt") >= 0;
+const IS_PERSONAL_TOKEN = DOPPLER_TOKEN.startsWith("dp.pt.");
 if (IS_PERSONAL_TOKEN) {
   console.log("[info]: Personal token detected. doppler-project and doppler-config inputs are now required.");
 }
