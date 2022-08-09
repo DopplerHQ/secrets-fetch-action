@@ -13,7 +13,7 @@ The action can be configured in two ways:
 
 ### Service Token
 
-A [Doppler Service Token](https://docs.doppler.com/docs/service-tokens) provides read-only access to single config and is recommended due to its limited access scope.
+A [Doppler Service Token](https://docs.doppler.com/docs/service-tokens) provides read-only access to a single config and is recommended due to its limited access scope.
 
 Create a GitHub repository secret named `DOPPLER_TOKEN` or if using multiple Service Tokens (e.g. for a Monorepo), you can prefix the secret name using with application name, e.g. `AUTH_API_DOPPLER_TOKEN`.
 
@@ -35,8 +35,8 @@ A Doppler Personal Token provides read/write access to every Project and Config 
       id: doppler
       with:
         doppler-token: ${{ secrets.PERSONAL_DOPPLER_TOKEN }}
-        project: auth-api
-        config: ci-cd
+        doppler-project: auth-api
+        doppler-config: ci-cd
 ```
 
 ## Usage
