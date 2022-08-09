@@ -1,12 +1,11 @@
-import { setCommandEcho } from "@actions/core";
 import https from "https";
 import { VERSION } from "./meta.js";
 
 /**
  * Fetch secrets from Doppler the API
  * @param {string} dopplerToken
- * @param {string} [dopplerProject]
- * @param {string} [dopplerConfig]
+ * @param {string | null} [dopplerProject]
+ * @param {string | null} [dopplerConfig]
  * @returns {() => Promise<Record<string, string>>}
  */
 async function fetch(dopplerToken, dopplerProject, dopplerConfig) {
