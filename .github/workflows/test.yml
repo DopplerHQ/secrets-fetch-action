@@ -3,7 +3,7 @@ name: Test
 on: [push, pull_request]
 
 jobs:
-  test:
+  service-token-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -15,3 +15,17 @@ jobs:
         env:
           NODE_ENV: development
           DOPPLER_TOKEN: ${{ secrets.TEST_DOPPLER_TOKEN }}
+  personal-token-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+        with:
+          node-version: 16
+      - run: npm install
+      - run: npm run test
+        env:
+          NODE_ENV: development
+          DOPPLER_TOKEN: ${{ secrets.TEST_DOPPLER_PERSONAL_TOKEN }}
+          DOPPLER_PROJECT: github-actions-secrets-fetch-test
+          DOPPLER_CONFIG: prd
