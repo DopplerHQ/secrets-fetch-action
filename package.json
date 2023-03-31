@@ -19,6 +19,6 @@
     "keywords": [],
     "homepage": "https://github.com/dopplerhq/secrets-fetch-action/#readme",
     "dependencies": {
-        "@actions/core": "^1.9.1"
+        "@actions/core": "^1.10.0"
     }
 }
