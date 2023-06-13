@@ -9,7 +9,7 @@ This action enables you to fetch Doppler secrets for use in your GitHub Actions.
 The action can be configured in two ways:
 
 * Service Token (recommended)
-* Personal Token with Project and Config
+* Service Account Token with Project and Config
 
 ### Service Token
 
@@ -26,15 +26,15 @@ Then supply the Service Token using the `doppler-token` input:
         doppler-token: ${{ secrets.DOPPLER_TOKEN }}
 ```
 
-### Personal Token
+### Service Account Token
 
-A Doppler Personal Token provides read/write access to every Project and Config accessible for that account and should only be used when necessary. The `doppler-project` and `doppler-config` inputs must be provided when using a Personal Token:
+A Doppler Service Account Token allows for a configurable set of permissions to services in your workplace. The `doppler-project` and `doppler-config` inputs must be provided when using a Service Account Token:
 
 ```yaml
 - uses: dopplerhq/secrets-fetch-action@v1.1.1
       id: doppler
       with:
-        doppler-token: ${{ secrets.PERSONAL_DOPPLER_TOKEN }}
+        doppler-token: ${{ secrets.DOPPLER_TOKEN }}
         doppler-project: auth-api
         doppler-config: ci-cd
 ```

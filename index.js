@@ -12,11 +12,16 @@ const DOPPLER_META = ["DOPPLER_PROJECT", "DOPPLER_CONFIG", "DOPPLER_ENVIRONMENT"
 const DOPPLER_TOKEN = core.getInput("doppler-token", { required: true });
 core.setSecret(DOPPLER_TOKEN);
 
+const IS_SA_TOKEN = DOPPLER_TOKEN.startsWith("dp.sa.");
 const IS_PERSONAL_TOKEN = DOPPLER_TOKEN.startsWith("dp.pt.");
-const DOPPLER_PROJECT = IS_PERSONAL_TOKEN ? core.getInput("doppler-project") : null;
-const DOPPLER_CONFIG = IS_PERSONAL_TOKEN ? core.getInput("doppler-config") : null;
+const DOPPLER_PROJECT = (IS_SA_TOKEN || IS_PERSONAL_TOKEN) ? core.getInput("doppler-project") : null;
+const DOPPLER_CONFIG = (IS_SA_TOKEN || IS_PERSONAL_TOKEN) ? core.getInput("doppler-config") : null;
 if (IS_PERSONAL_TOKEN && !(DOPPLER_PROJECT && DOPPLER_CONFIG)) {
-  core.setFailed("doppler-project and doppler-config inputs are required when using a Personal token");
+  core.setFailed("doppler-project and doppler-config inputs are required when using a Personal token. Additionally, we recommend switching to Service Accounts.");
+  process.exit();
+}
+if (IS_SA_TOKEN && !(DOPPLER_PROJECT && DOPPLER_CONFIG)) {
+  core.setFailed("doppler-project and doppler-config inputs are required when using a Service Account token");
   process.exit();
 }
 

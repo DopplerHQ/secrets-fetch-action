@@ -15,7 +15,7 @@ jobs:
         env:
           NODE_ENV: development
           DOPPLER_TOKEN: ${{ secrets.TEST_DOPPLER_TOKEN }}
-  personal-token-test:
+  service-account-token-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -26,6 +26,6 @@ jobs:
       - run: npm run test
         env:
           NODE_ENV: development
-          DOPPLER_TOKEN: ${{ secrets.TEST_DOPPLER_PERSONAL_TOKEN }}
-          DOPPLER_PROJECT: github-actions-secrets-fetch-test
-          DOPPLER_CONFIG: prd
+          DOPPLER_TOKEN: ${{ secrets.TEST_DOPPLER_SA_TOKEN }}
+          DOPPLER_PROJECT: secrets-fetch-action
+          DOPPLER_CONFIG: test
