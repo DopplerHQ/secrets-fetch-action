@@ -27,9 +27,11 @@ if (IS_SA_TOKEN && !(DOPPLER_PROJECT && DOPPLER_CONFIG)) {
 
 const secrets = await fetch(DOPPLER_TOKEN, DOPPLER_PROJECT, DOPPLER_CONFIG);
 
-for (const [key, value] of Object.entries(secrets)) {
+for (const [key, secret] of Object.entries(secrets)) {
+  const value = secret.computed;
+
   core.setOutput(key, value);
-  if (!DOPPLER_META.includes(key)) {
+  if (!DOPPLER_META.includes(key) && secret.computedVisibility !== "unmasked") {
     core.setSecret(value);
   }
 
