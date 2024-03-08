@@ -30,6 +30,12 @@ const secrets = await fetch(DOPPLER_TOKEN, DOPPLER_PROJECT, DOPPLER_CONFIG);
 for (const [key, secret] of Object.entries(secrets)) {
   const value = secret.computed;
 
+  try {
+    core.info(`Key ${key} has computed value of length ${value.length}, a raw value of length ${(secret.raw || "").length} and is ${secret.computedVisibility} (computed vis) vs ${secret.rawVisibility} (raw vis)`);
+  } catch (e) {
+    core.info(`Error trying to print out debugging info for ${key} ... ${e}`);
+  }
+
   core.setOutput(key, value);
   if (!DOPPLER_META.includes(key) && secret.computedVisibility !== "unmasked") {
     core.setSecret(value);
