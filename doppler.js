@@ -35,7 +35,7 @@ async function fetch(dopplerToken, dopplerProject, dopplerConfig) {
           res.on("data", (data) => (payload += data));
           res.on("end", () => {
             if (res.statusCode === 200) {
-              resolve(JSON.parse(payload));
+              resolve(JSON.parse(payload).secrets);
             } else {
               try {
                 const error = JSON.parse(payload).messages.join(" ");
