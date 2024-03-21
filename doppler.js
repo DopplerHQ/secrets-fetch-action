@@ -6,7 +6,7 @@ import { VERSION } from "./meta.js";
  * @param {string} dopplerToken
  * @param {string | null} [dopplerProject]
  * @param {string | null} [dopplerConfig]
- * @returns {() => Promise<Record<string, string>>}
+ * @returns {() => Promise<Record<string, Record>>}
  */
 async function fetch(dopplerToken, dopplerProject, dopplerConfig) {
   return new Promise(function (resolve, reject) {
@@ -14,7 +14,7 @@ async function fetch(dopplerToken, dopplerProject, dopplerConfig) {
     const authHeader = `Basic ${encodedAuthData}`;
     const userAgent = `secrets-fetch-github-action/${VERSION}`;
 
-    const url = new URL("https://api.doppler.com/v3/configs/config/secrets/download?format=json");
+    const url = new URL("https://api.doppler.com/v3/configs/config/secrets");
     if (dopplerProject && dopplerConfig) {
       url.searchParams.append("project", dopplerProject);
       url.searchParams.append("config", dopplerConfig);
@@ -27,6 +27,7 @@ async function fetch(dopplerToken, dopplerProject, dopplerConfig) {
           headers: {
             Authorization: authHeader,
             "user-agent": userAgent,
+            "accepts": "application/json",
           },
         },
         (res) => {
@@ -34,7 +35,7 @@ async function fetch(dopplerToken, dopplerProject, dopplerConfig) {
           res.on("data", (data) => (payload += data));
           res.on("end", () => {
             if (res.statusCode === 200) {
-              resolve(JSON.parse(payload));
+              resolve(JSON.parse(payload).secrets);
             } else {
               try {
                 const error = JSON.parse(payload).messages.join(" ");
