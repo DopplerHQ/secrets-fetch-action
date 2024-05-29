@@ -2,7 +2,7 @@
 
 This action enables you to fetch Doppler secrets for use in your GitHub Actions.
 
-> NOTE: If the GitHub Actions for your repository only require secrets from a single config, we recommend using our [Doppler GitHub application](https://github.com/apps/doppler-secrets-manager/) instead, as it syncs secrets directly to your repository.
+> NOTE: If the GitHub Actions for your repository only require secrets from a single config, we recommend using our [Doppler GitHub application](https://github.com/apps/doppler-secretops-platform/) instead, as it syncs secrets directly to your repository.
 
 ## Configuration
 
