@@ -20,7 +20,7 @@ Create a GitHub repository secret named `DOPPLER_TOKEN` or if using multiple Ser
 Then supply the Service Token using the `doppler-token` input:
 
 ```yaml
-- uses: dopplerhq/secrets-fetch-action@v1.2.0
+- uses: dopplerhq/secrets-fetch-action@v1.3.0
       id: doppler
       with:
         doppler-token: ${{ secrets.DOPPLER_TOKEN }}
@@ -31,7 +31,7 @@ Then supply the Service Token using the `doppler-token` input:
 A Doppler Service Account Token allows for a configurable set of permissions to services in your workplace. The `doppler-project` and `doppler-config` inputs must be provided when using a Service Account Token:
 
 ```yaml
-- uses: dopplerhq/secrets-fetch-action@v1.2.0
+- uses: dopplerhq/secrets-fetch-action@v1.3.0
       id: doppler
       with:
         doppler-token: ${{ secrets.DOPPLER_TOKEN }}
@@ -59,7 +59,7 @@ jobs:
   secrets-fetch:
     runs-on: ubuntu-latest
     steps:
-    - uses: dopplerhq/secrets-fetch-action@v1.2.0
+    - uses: dopplerhq/secrets-fetch-action@v1.3.0
       id: doppler
       with:
         doppler-token: ${{ secrets.DOPPLER_TOKEN }}
@@ -82,7 +82,7 @@ jobs:
   secrets-fetch:
     runs-on: ubuntu-latest
     steps:
-    - uses: dopplerhq/secrets-fetch-action@v1.2.0
+    - uses: dopplerhq/secrets-fetch-action@v1.3.0
       id: doppler
       with:
         doppler-token: ${{ secrets.DOPPLER_TOKEN }}
