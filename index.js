@@ -1,18 +1,33 @@
 import core from "@actions/core";
-import fetch from "./doppler.js";
+import { fetch, oidcAuth } from "./doppler.js";
 
 // For local testing
 if (process.env.NODE_ENV === "development" && process.env.DOPPLER_TOKEN) {
+  process.env["INPUT_AUTH-METHOD"] = "token";
   process.env["INPUT_DOPPLER-TOKEN"] = process.env.DOPPLER_TOKEN;
   process.env["INPUT_DOPPLER-PROJECT"] = process.env.DOPPLER_PROJECT;
   process.env["INPUT_DOPPLER-CONFIG"] = process.env.DOPPLER_CONFIG;
 }
 
+const AUTH_METHOD = core.getInput("auth-method");
+let DOPPLER_TOKEN = "";
+
+if (AUTH_METHOD === "oidc") {
+  const DOPPLER_IDENTITY_ID = core.getInput("doppler-identity-id", { required: true });
+  const oidcToken = await core.getIDToken();
+  core.setSecret(oidcToken);
+  DOPPLER_TOKEN = await oidcAuth(DOPPLER_IDENTITY_ID, oidcToken)
+} else if (AUTH_METHOD === "token") {
+  DOPPLER_TOKEN = core.getInput("doppler-token", { required: true });
+} else {
+  core.setFailed("Unsupported auth-method");
+  process.exit();
+}
+
 const DOPPLER_META = ["DOPPLER_PROJECT", "DOPPLER_CONFIG", "DOPPLER_ENVIRONMENT"];
-const DOPPLER_TOKEN = core.getInput("doppler-token", { required: true });
 core.setSecret(DOPPLER_TOKEN);
 
-const IS_SA_TOKEN = DOPPLER_TOKEN.startsWith("dp.sa.");
+const IS_SA_TOKEN = DOPPLER_TOKEN.startsWith("dp.sa.") || DOPPLER_TOKEN.startsWith("dp.said.");
 const IS_PERSONAL_TOKEN = DOPPLER_TOKEN.startsWith("dp.pt.");
 const DOPPLER_PROJECT = (IS_SA_TOKEN || IS_PERSONAL_TOKEN) ? core.getInput("doppler-project") : null;
 const DOPPLER_CONFIG = (IS_SA_TOKEN || IS_PERSONAL_TOKEN) ? core.getInput("doppler-config") : null;
