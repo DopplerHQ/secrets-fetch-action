@@ -31,6 +31,9 @@ inputs:
     description: >-
       Identity to use, required when auth-method is "oidc".
     required: false
+  doppler-api-domain:
+    default: "api.doppler.com"
+    required: false
 runs:
   using: 'node20'
   main: 'index.js'

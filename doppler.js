@@ -6,15 +6,16 @@ import { VERSION } from "./meta.js";
  * @param {string} dopplerToken
  * @param {string | null} [dopplerProject]
  * @param {string | null} [dopplerConfig]
+ * @param {string} apiDomain 
  * @returns {() => Promise<Record<string, Record>>}
  */
-export async function fetch(dopplerToken, dopplerProject, dopplerConfig) {
+export async function fetch(dopplerToken, dopplerProject, dopplerConfig, apiDomain) {
   return new Promise(function (resolve, reject) {
     const encodedAuthData = Buffer.from(`${dopplerToken}:`).toString("base64");
     const authHeader = `Basic ${encodedAuthData}`;
     const userAgent = `secrets-fetch-github-action/${VERSION}`;
 
-    const url = new URL("https://api.doppler.com/v3/configs/config/secrets");
+    const url = new URL(`https://${apiDomain}/v3/configs/config/secrets`);
     if (dopplerProject && dopplerConfig) {
       url.searchParams.append("project", dopplerProject);
       url.searchParams.append("config", dopplerConfig);
@@ -58,13 +59,14 @@ export async function fetch(dopplerToken, dopplerProject, dopplerConfig) {
  * Exchange an OIDC token for a short lived Doppler service account token
  * @param {string} identityId 
  * @param {string} oidcToken 
+ * @param {string} apiDomain 
  * @returns {() => Promise<string>}
  */
-export async function oidcAuth(identityId, oidcToken) {
+export async function oidcAuth(identityId, oidcToken, apiDomain) {
   return new Promise(function (resolve, reject) {
     const userAgent = `secrets-fetch-github-action/${VERSION}`;
 
-    const url = new URL("https://api.doppler.com/v3/auth/oidc");
+    const url = new URL(`https://${apiDomain}/v3/auth/oidc`);
     const body = JSON.stringify({
       identity: identityId,
       token: oidcToken
