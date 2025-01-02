@@ -8,26 +8,10 @@ This action enables you to fetch Doppler secrets for use in your GitHub Actions.
 
 The action can be configured in two ways:
 
-* Service Token
 * Service Account with Project and Config via either:
   - Service Account Identity via OIDC (recommended)
   - Service Account Token
-
-
-### Service Token
-
-A [Doppler Service Token](https://docs.doppler.com/docs/service-tokens) provides read-only access to a single config.
-
-Create a GitHub repository secret named `DOPPLER_TOKEN` or if using multiple Service Tokens (e.g. for a Monorepo), you can prefix the secret name using with application name, e.g. `AUTH_API_DOPPLER_TOKEN`.
-
-Then supply the Service Token using the `doppler-token` input:
-
-```yaml
-- uses: dopplerhq/secrets-fetch-action@v1.3.0
-      id: doppler
-      with:
-        doppler-token: ${{ secrets.DOPPLER_TOKEN }}
-```
+* Service Token
 
 ### Service Account 
 
@@ -65,6 +49,21 @@ jobs:
         doppler-token: ${{ secrets.DOPPLER_TOKEN }}
         doppler-project: auth-api
         doppler-config: ci-cd
+```
+
+### Service Token
+
+A [Doppler Service Token](https://docs.doppler.com/docs/service-tokens) provides read-only access to a single config.
+
+Create a GitHub repository secret named `DOPPLER_TOKEN` or if using multiple Service Tokens (e.g. for a Monorepo), you can prefix the secret name using with application name, e.g. `AUTH_API_DOPPLER_TOKEN`.
+
+Then supply the Service Token using the `doppler-token` input:
+
+```yaml
+- uses: dopplerhq/secrets-fetch-action@v1.3.0
+      id: doppler
+      with:
+        doppler-token: ${{ secrets.DOPPLER_TOKEN }}
 ```
 
 ## Usage
