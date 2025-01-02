@@ -7,7 +7,7 @@ import { VERSION } from "./meta.js";
  * @param {string | null} [dopplerProject]
  * @param {string | null} [dopplerConfig]
  * @param {string} apiDomain 
- * @returns {() => Promise<Record<string, Record>>}
+ * @returns {Promise<Record<string, Record>>}
  */
 export async function fetch(dopplerToken, dopplerProject, dopplerConfig, apiDomain) {
   return new Promise(function (resolve, reject) {
@@ -60,7 +60,7 @@ export async function fetch(dopplerToken, dopplerProject, dopplerConfig, apiDoma
  * @param {string} identityId 
  * @param {string} oidcToken 
  * @param {string} apiDomain 
- * @returns {() => Promise<string>}
+ * @returns {Promise<string>}
  */
 export async function oidcAuth(identityId, oidcToken, apiDomain) {
   return new Promise(function (resolve, reject) {
