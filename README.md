@@ -8,35 +8,62 @@ This action enables you to fetch Doppler secrets for use in your GitHub Actions.
 
 The action can be configured in two ways:
 
-* Service Token (recommended)
-* Service Account Token with Project and Config
+* Service Account with Project and Config via either:
+  - Service Account Identity via OIDC (recommended)
+  - Service Account Token
+* Service Token
+
+### Service Account 
+
+A Doppler Service Account allows for a configurable set of permissions to services in your workplace. A project and config must be specified when using a service account. Your workplace must be on the Team or Enterprise plan in order to use service accounts.
+
+#### Service Account Identity via OIDC
+
+[Identities](https://docs.doppler.com/docs/service-account-identities) allow a service account to authenticate to Doppler via OIDC without using a static API token. This method works like the Service Account Token method below but without a static API token.
+
+The `auth-method`, `doppler-identity-id`, `doppler-project` and `doppler-config` inputs must be provided when using a Service Account Identity. The permission `id-token: write` is required so that Doppler can obtain an OIDC token from Github for authentication.
+
+```yaml
+jobs:
+  your-example-job:
+    permissions:
+      id-token: write # required for obtaining the OIDC JWT from Github
+    steps:
+      - uses: dopplerhq/secrets-fetch-action@v1.3.0
+          id: doppler
+          with:
+            auth-method: oidc        
+            doppler-identity-id: <your-service-account-identity-uuid> 
+            doppler-project: auth-api
+            doppler-config: ci-cd
+```
+
+#### Service Account Token
+
+ The `doppler-project` and `doppler-config` inputs must be provided when using a Service Account Token:
+
+```yaml
+- uses: dopplerhq/secrets-fetch-action@v1.3.0
+      id: doppler
+      with:
+        doppler-token: ${{ secrets.DOPPLER_TOKEN }}
+        doppler-project: auth-api
+        doppler-config: ci-cd
+```
 
 ### Service Token
 
-A [Doppler Service Token](https://docs.doppler.com/docs/service-tokens) provides read-only access to a single config and is recommended due to its limited access scope.
+A [Doppler Service Token](https://docs.doppler.com/docs/service-tokens) provides read-only access to a single config.
 
 Create a GitHub repository secret named `DOPPLER_TOKEN` or if using multiple Service Tokens (e.g. for a Monorepo), you can prefix the secret name using with application name, e.g. `AUTH_API_DOPPLER_TOKEN`.
 
 Then supply the Service Token using the `doppler-token` input:
 
 ```yaml
-- uses: dopplerhq/secrets-fetch-action@v1.2.0
+- uses: dopplerhq/secrets-fetch-action@v1.3.0
       id: doppler
       with:
         doppler-token: ${{ secrets.DOPPLER_TOKEN }}
-```
-
-### Service Account Token
-
-A Doppler Service Account Token allows for a configurable set of permissions to services in your workplace. The `doppler-project` and `doppler-config` inputs must be provided when using a Service Account Token:
-
-```yaml
-- uses: dopplerhq/secrets-fetch-action@v1.2.0
-      id: doppler
-      with:
-        doppler-token: ${{ secrets.DOPPLER_TOKEN }}
-        doppler-project: auth-api
-        doppler-config: ci-cd
 ```
 
 ## Usage
@@ -59,7 +86,7 @@ jobs:
   secrets-fetch:
     runs-on: ubuntu-latest
     steps:
-    - uses: dopplerhq/secrets-fetch-action@v1.2.0
+    - uses: dopplerhq/secrets-fetch-action@v1.3.0
       id: doppler
       with:
         doppler-token: ${{ secrets.DOPPLER_TOKEN }}
@@ -82,7 +109,7 @@ jobs:
   secrets-fetch:
     runs-on: ubuntu-latest
     steps:
-    - uses: dopplerhq/secrets-fetch-action@v1.2.0
+    - uses: dopplerhq/secrets-fetch-action@v1.3.0
       id: doppler
       with:
         doppler-token: ${{ secrets.DOPPLER_TOKEN }}

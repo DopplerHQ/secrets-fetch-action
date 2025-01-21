@@ -4,11 +4,17 @@ branding:
   icon: 'lock'
   color: 'blue'
 inputs:
+  auth-method:
+    description: >- 
+      Auth method to use.
+      - "token" (default): Authenticate with a static API token (`doppler-token`)
+      - "oidc": Authenticate via OIDC. Note that this requires the `id-token: write` permission on the Github job or workflow. See https://docs.doppler.com/docs/service-account-identities
+    default: "token"
   doppler-token:
     description: >-
       Doppler Service Token that grants access to a single Config within a Project. 
       See https://docs.doppler.com/docs/service-tokens
-    required: true
+    required: false
   doppler-project:
     description: >-
       Doppler Project
@@ -20,6 +26,13 @@ inputs:
   inject-env-vars:
     description: >-
       Inject secrets as environment variables for subsequent steps if set to `true`.
+    required: false
+  doppler-identity-id:
+    description: >-
+      Identity to use, required when auth-method is "oidc".
+    required: false
+  doppler-api-domain:
+    default: "api.doppler.com"
     required: false
 runs:
   using: 'node20'
