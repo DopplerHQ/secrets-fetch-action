@@ -21,13 +21,13 @@ A Doppler Service Account allows for a configurable set of permissions to servic
 
 [Identities](https://docs.doppler.com/docs/service-account-identities) allow a service account to authenticate to Doppler via OIDC without using a static API token. This method works like the Service Account Token method below but without a static API token.
 
-The `auth-method`, `doppler-identity-id`, `doppler-project` and `doppler-config` inputs must be provided when using a Service Account Identity. The permission `id-token: write` is required so that Doppler can obtain an OIDC token from Github for authentication.
+The `auth-method`, `doppler-identity-id`, `doppler-project` and `doppler-config` inputs must be provided when using a Service Account Identity. The permission `id-token: write` is required so that Doppler can obtain an OIDC token from GitHub for authentication.
 
 ```yaml
 jobs:
   your-example-job:
     permissions:
-      id-token: write # required for obtaining the OIDC JWT from Github
+      id-token: write # required for obtaining the OIDC JWT from GitHub
     steps:
       - uses: dopplerhq/secrets-fetch-action@v1.3.0
           id: doppler
