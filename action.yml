@@ -35,5 +35,5 @@ inputs:
     default: "api.doppler.com"
     required: false
 runs:
-  using: 'node20'
+  using: 'node24'
   main: 'index.js'
