@@ -10,10 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     name: NPM Audit
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
       - name: npm audit
         run: npm audit --omit dev
 
@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Semgrep
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Scan
         id: scan
         run: |
