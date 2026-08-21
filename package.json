@@ -8,20 +8,24 @@
     "bugs": {
         "url": "https://github.com/dopplerhq/secrets-fetch-action/issues"
     },
-    "main": "index.js",
+    "main": "bin/index.js",
     "repository": {
         "type": "git",
         "url": "git+https://github.com/dopplerhq/secrets-fetch-action"
     },
     "type": "module",
     "scripts": {
-        "test": "node --test doppler.test.js",
-        "test:watch": "node --test --watch doppler.test.js"
+        "build": "rolldown --config rolldown.config.ts",
+        "test": "node --test src/doppler.test.js",
+        "test:watch": "node --test --watch src/doppler.test.js"
     },
     "keywords": [],
     "homepage": "https://github.com/dopplerhq/secrets-fetch-action/#readme",
     "dependencies": {
         "@actions/core": "^3.0.1"
     },
-    "packageManager": "pnpm@11.22.0"
+    "packageManager": "pnpm@11.22.0",
+    "devDependencies": {
+        "rolldown": "^1.2.5"
+    }
 }
