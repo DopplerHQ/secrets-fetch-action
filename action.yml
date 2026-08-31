@@ -36,4 +36,4 @@ inputs:
     required: false
 runs:
   using: 'node24'
-  main: 'index.js'
+  main: 'bin/index.js'

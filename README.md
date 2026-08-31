@@ -129,4 +129,4 @@ and any secrets assigned the `unmasked` [secret visibility](https://docs.doppler
 
 # Development and Testing
 
-Export the `NODE_ENV` and `DOPPLER_TOKEN` environment variables, then run `npm test`.
+Export the `NODE_ENV` and `DOPPLER_TOKEN` environment variables, then run `pnpm test`.
