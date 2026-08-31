@@ -8,7 +8,7 @@ inputs:
     description: >- 
       Auth method to use.
       - "token" (default): Authenticate with a static API token (`doppler-token`)
-      - "oidc": Authenticate via OIDC. Note that this requires the `id-token: write` permission on the Github job or workflow. See https://docs.doppler.com/docs/service-account-identities
+      - "oidc": Authenticate via OIDC. Note that this requires the `id-token: write` permission on the GitHub job or workflow. See https://docs.doppler.com/docs/service-account-identities
     default: "token"
   doppler-token:
     description: >-
