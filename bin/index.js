@@ -101,6 +101,9 @@ function issueCommand(command, properties, message) {
 	const cmd = new Command(command, properties, message);
 	process.stdout.write(cmd.toString() + os$1.EOL);
 }
+function issue(name, message = "") {
+	issueCommand(name, {}, message);
+}
 const CMD_STRING = "::";
 var Command = class {
 	constructor(command, properties, message) {
@@ -17053,6 +17056,30 @@ function debug(message) {
 function error(message, properties = {}) {
 	issueCommand("error", toCommandProperties(properties), message instanceof Error ? message.toString() : message);
 }
+/**
+* Adds a warning issue
+* @param message warning issue message. Errors will be converted to string via toString()
+* @param properties optional properties to add to the annotation.
+*/
+function warning(message, properties = {}) {
+	issueCommand("warning", toCommandProperties(properties), message instanceof Error ? message.toString() : message);
+}
+/**
+* Begin an output group.
+*
+* Output until the next `groupEnd` will be foldable in this group
+*
+* @param name The name of the output group
+*/
+function startGroup(name) {
+	issue("group", name);
+}
+/**
+* End an output group.
+*/
+function endGroup() {
+	issue("endgroup");
+}
 function getIDToken(aud) {
 	return __awaiter(this, void 0, void 0, function* () {
 		return yield OidcClient.getIDToken(aud);
@@ -17210,6 +17237,198 @@ async function oidcAuth(identityId, oidcToken, apiDomain) {
 	return withRetry(() => _oidcAuth(identityId, oidcToken, apiDomain));
 }
 //#endregion
+//#region src/names.js
+/** Expandable as `$NAME` in a POSIX shell */
+const SHELL_SAFE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+/** Usable as a bare property in an Actions expression, e.g. steps.x.outputs.NAME */
+const EXPR_SAFE = /^[A-Za-z_][A-Za-z0-9_-]*$/;
+/** Characters that would corrupt the $GITHUB_ENV / $GITHUB_OUTPUT heredoc format */
+const STRUCTURALLY_UNSAFE = /[\r\n\0=]/;
+/**
+* Classify a secret name by where it can be used
+* @param {string} name
+* @returns {{name: string, structurallyUnsafe: boolean, shellSafe: boolean, exprSafe: boolean}}
+*/
+function classify(name) {
+	const structurallyUnsafe = name === "" || STRUCTURALLY_UNSAFE.test(name);
+	return {
+		name,
+		structurallyUnsafe,
+		shellSafe: !structurallyUnsafe && SHELL_SAFE.test(name),
+		exprSafe: !structurallyUnsafe && EXPR_SAFE.test(name)
+	};
+}
+/**
+* Key for detecting names that collide once case is folded. Environment variables
+* are case-insensitive on Windows, so api_key and API_KEY are one variable there.
+* @param {string} name
+* @returns {string}
+*/
+function collisionKey(name) {
+	return name.toUpperCase();
+}
+//#endregion
+//#region src/secrets.js
+/** Server-injected metadata, which is not masked */
+const DOPPLER_META = [
+	"DOPPLER_PROJECT",
+	"DOPPLER_CONFIG",
+	"DOPPLER_ENVIRONMENT"
+];
+const INVALID_NAME_POLICIES = [
+	"warn",
+	"error",
+	"skip"
+];
+const DEFAULT_INVALID_NAME_POLICY = "warn";
+/**
+* @typedef {Object} Problem
+* @property {string} name
+* @property {"structural"|"shell"|"expr"|"collision"} kind
+* @property {string} [other] for collisions, the name already holding the slot
+*/
+/**
+* Determines if a name problem should fail the step. Structural problems always do,
+* since the secret is unreachable either way, and collisions do on Windows only.
+* @param {Problem} problem
+* @param {{onInvalidName: string, platform: string}} options
+* @returns {boolean}
+*/
+function isFatal(problem, { onInvalidName, platform }) {
+	if (problem.kind === "structural") return true;
+	if (problem.kind === "collision" && platform === "win32") return true;
+	return onInvalidName === "error";
+}
+/**
+* Write secrets to the outputs, mask register, and optionally the environment,
+* collecting any name usability problems along the way
+* @param {Record<string, {computed?: string, computedVisibility?: string}>} secrets
+* @param {Object} options
+* @param {any} options.core the @actions/core functions, injected for testability
+* @param {boolean} [options.injectEnvVars]
+* @param {string} [options.onInvalidName]
+* @returns {Problem[]}
+*/
+function processSecrets(secrets, { core, injectEnvVars = false, onInvalidName = DEFAULT_INVALID_NAME_POLICY }) {
+	const problems = [];
+	const envSeen = /* @__PURE__ */ new Map();
+	const skip = onInvalidName === "skip";
+	for (const [name, secret] of Object.entries(secrets)) {
+		const value = secret?.computed || "";
+		const classification = classify(name);
+		if (!DOPPLER_META.includes(name) && secret?.computedVisibility !== "unmasked") core.setSecret(value);
+		if (classification.structurallyUnsafe) {
+			problems.push({
+				name,
+				kind: "structural"
+			});
+			continue;
+		}
+		if (classification.exprSafe || !skip) core.setOutput(name, value);
+		if (!classification.exprSafe) problems.push({
+			name,
+			kind: "expr"
+		});
+		if (!injectEnvVars) continue;
+		const folded = collisionKey(name);
+		const collidesWith = envSeen.get(folded);
+		if (collidesWith !== void 0 && collidesWith !== name) {
+			problems.push({
+				name,
+				kind: "collision",
+				other: collidesWith
+			});
+			if (skip) continue;
+		}
+		envSeen.set(folded, name);
+		if (classification.shellSafe || !skip) core.exportVariable(name, value);
+		if (!classification.shellSafe) problems.push({
+			name,
+			kind: "shell"
+		});
+	}
+	return problems;
+}
+/**
+* Render a name list for a log message, capped so a config full of
+* non-conforming names does not bury the rest of the log
+* @param {string[]} names
+* @param {number} [max]
+* @returns {string}
+*/
+function formatNames(names, max = 10) {
+	const shown = names.slice(0, max).map((name) => `'${name}'`).join(", ");
+	const remaining = names.length - max;
+	return remaining > 0 ? `${shown} (+${remaining} more)` : shown;
+}
+/**
+* Render a list of colliding pairs, capped the same way as a name list
+* @param {Problem[]} group
+* @param {number} [max]
+* @returns {string}
+*/
+function formatPairs(group, max = 10) {
+	const shown = group.slice(0, max).map((problem) => `'${problem.name}' vs '${problem.other}'`).join(", ");
+	const remaining = group.length - max;
+	return remaining > 0 ? `${shown} (+${remaining} more)` : shown;
+}
+/**
+* Build the log message for one group of same-kind problems
+* @param {string} kind
+* @param {Problem[]} group
+* @param {boolean} skipped whether the configured policy suppressed the write
+* @returns {string}
+*/
+function formatMessage(kind, group, skipped) {
+	const count = group.length;
+	const isOne = count === 1;
+	const plural = isOne ? "" : "s";
+	const names = formatNames(group.map((problem) => problem.name));
+	switch (kind) {
+		case "structural": return `${count} secret name${plural} ${isOne ? "contains" : "contain"} characters that cannot be written to $GITHUB_ENV or $GITHUB_OUTPUT (newline, carriage return, null byte, or '=') and ${isOne ? "was" : "were"} skipped: ${names}. The value${plural} ${isOne ? "is" : "are"} still masked in logs.`;
+		case "shell": return `${count} secret name${plural} cannot be referenced as $NAME in a shell step${skipped ? ` and so ${isOne ? "was" : "were"} not exported` : ""}: ${names}. Note that $MY-SECRET expands to the empty $MY followed by the literal '-SECRET' rather than failing. Read ${isOne ? "it" : "these"} with printenv 'NAME' or \${{ env['NAME'] }}.`;
+		case "expr": return `${count} step output${plural} ${isOne ? "needs" : "need"} index syntax to read${skipped ? ` and so ${isOne ? "was" : "were"} not set` : ""}: ${names}. Use \${{ steps.<step-id>.outputs['NAME'] }} rather than .NAME.`;
+		case "collision": return `${count} secret name${plural} ${isOne ? "differs" : "differ"} from another only by case. Environment variables are case-insensitive on Windows runners, so one silently overwrites the other there: ${formatPairs(group)}.`;
+		default: return `${count} secret name${plural}: ${names}`;
+	}
+}
+/**
+* Emit one grouped message per problem kind, then fail the step if any problem
+* is fatal under the configured policy
+* @param {Problem[]} problems
+* @param {{core: any, onInvalidName: string, platform: string}} options
+* @returns {boolean} whether the step was failed
+*/
+function reportProblems(problems, { core, onInvalidName, platform }) {
+	if (problems.length === 0) return false;
+	const byKind = /* @__PURE__ */ new Map();
+	for (const problem of problems) {
+		const group = byKind.get(problem.kind);
+		if (group) group.push(problem);
+		else byKind.set(problem.kind, [problem]);
+	}
+	const fatal = problems.filter((problem) => isFatal(problem, {
+		onInvalidName,
+		platform
+	}));
+	const skipped = onInvalidName === "skip";
+	core.startGroup("Doppler: secret name compatibility");
+	for (const [kind, group] of byKind) {
+		const message = formatMessage(kind, group, skipped);
+		if (group.some((problem) => isFatal(problem, {
+			onInvalidName,
+			platform
+		}))) core.error(message);
+		else core.warning(message);
+	}
+	core.endGroup();
+	if (fatal.length > 0) {
+		core.setFailed(`${fatal.length} secret name${fatal.length === 1 ? "" : "s"} cannot be used as requested. See the "Doppler: secret name compatibility" group above for details.`);
+		return true;
+	}
+	return false;
+}
+//#endregion
 //#region src/index.js
 if (process.env.NODE_ENV === "development" && process.env.DOPPLER_TOKEN) {
 	process.env["INPUT_AUTH-METHOD"] = "token";
@@ -17231,12 +17450,12 @@ else {
 	setFailed("Unsupported auth-method");
 	process.exit();
 }
-const DOPPLER_META = [
-	"DOPPLER_PROJECT",
-	"DOPPLER_CONFIG",
-	"DOPPLER_ENVIRONMENT"
-];
 setSecret(DOPPLER_TOKEN);
+const ON_INVALID_NAME = getInput("on-invalid-name") || "warn";
+if (!INVALID_NAME_POLICIES.includes(ON_INVALID_NAME)) {
+	setFailed(`Unsupported on-invalid-name '${ON_INVALID_NAME}'. Valid options are ${INVALID_NAME_POLICIES.join(", ")}`);
+	process.exit();
+}
 const IS_SA_TOKEN = DOPPLER_TOKEN.startsWith("dp.sa.") || DOPPLER_TOKEN.startsWith("dp.said.");
 const IS_PERSONAL_TOKEN = DOPPLER_TOKEN.startsWith("dp.pt.");
 const DOPPLER_PROJECT = IS_SA_TOKEN || IS_PERSONAL_TOKEN ? getInput("doppler-project") : null;
@@ -17250,11 +17469,24 @@ if (IS_SA_TOKEN && !(DOPPLER_PROJECT && DOPPLER_CONFIG)) {
 	process.exit();
 }
 const secrets = await fetch(DOPPLER_TOKEN, DOPPLER_PROJECT, DOPPLER_CONFIG, API_DOMAIN);
-for (const [key, secret] of Object.entries(secrets)) {
-	const value = secret.computed || "";
-	setOutput(key, value);
-	if (!DOPPLER_META.includes(key) && secret.computedVisibility !== "unmasked") setSecret(value);
-	if (getInput("inject-env-vars") === "true") exportVariable(key, value);
-}
+const sink = {
+	setOutput,
+	exportVariable,
+	setSecret,
+	setFailed,
+	warning,
+	error,
+	startGroup,
+	endGroup
+};
+reportProblems(processSecrets(secrets, {
+	core: sink,
+	injectEnvVars: getInput("inject-env-vars") === "true",
+	onInvalidName: ON_INVALID_NAME
+}), {
+	core: sink,
+	onInvalidName: ON_INVALID_NAME,
+	platform: process.platform
+});
 //#endregion
 export {};

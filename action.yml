@@ -31,6 +31,17 @@ inputs:
     description: >-
       Identity to use, required when auth-method is "oidc".
     required: false
+  on-invalid-name:
+    description: >-
+      How to handle secret names that cannot be used as-is in a workflow, such as
+      names containing dashes or forward slashes.
+      - "warn" (default): set the secret anyway and log how to read it
+      - "error": fail the step, listing every affected name
+      - "skip": omit the affected output or environment variable
+      Names containing a newline, carriage return, null byte, or "=" are always
+      skipped and always fail the step, since they cannot be written safely.
+    default: "warn"
+    required: false
   doppler-api-domain:
     default: "api.doppler.com"
     required: false

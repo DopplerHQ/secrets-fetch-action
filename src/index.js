@@ -1,5 +1,11 @@
 import * as core from "@actions/core";
 import { fetch, oidcAuth } from "./doppler.js";
+import {
+  DEFAULT_INVALID_NAME_POLICY,
+  INVALID_NAME_POLICIES,
+  processSecrets,
+  reportProblems,
+} from "./secrets.js";
 
 // For local testing
 if (process.env.NODE_ENV === "development" && process.env.DOPPLER_TOKEN) {
@@ -26,8 +32,13 @@ if (AUTH_METHOD === "oidc") {
   process.exit();
 }
 
-const DOPPLER_META = ["DOPPLER_PROJECT", "DOPPLER_CONFIG", "DOPPLER_ENVIRONMENT"];
 core.setSecret(DOPPLER_TOKEN);
+
+const ON_INVALID_NAME = core.getInput("on-invalid-name") || DEFAULT_INVALID_NAME_POLICY;
+if (!INVALID_NAME_POLICIES.includes(ON_INVALID_NAME)) {
+  core.setFailed(`Unsupported on-invalid-name '${ON_INVALID_NAME}'. Valid options are ${INVALID_NAME_POLICIES.join(", ")}`);
+  process.exit();
+}
 
 const IS_SA_TOKEN = DOPPLER_TOKEN.startsWith("dp.sa.") || DOPPLER_TOKEN.startsWith("dp.said.");
 const IS_PERSONAL_TOKEN = DOPPLER_TOKEN.startsWith("dp.pt.");
@@ -44,15 +55,23 @@ if (IS_SA_TOKEN && !(DOPPLER_PROJECT && DOPPLER_CONFIG)) {
 
 const secrets = await fetch(DOPPLER_TOKEN, DOPPLER_PROJECT, DOPPLER_CONFIG, API_DOMAIN);
 
-for (const [key, secret] of Object.entries(secrets)) {
-  const value = secret.computed || "";
+// Pass individual functions, not the core namespace; letting the namespace escape
+// into a call defeats tree-shaking and pulls all of @actions/core into the bundle
+const sink = {
+  setOutput: core.setOutput,
+  exportVariable: core.exportVariable,
+  setSecret: core.setSecret,
+  setFailed: core.setFailed,
+  warning: core.warning,
+  error: core.error,
+  startGroup: core.startGroup,
+  endGroup: core.endGroup,
+};
 
-  core.setOutput(key, value);
-  if (!DOPPLER_META.includes(key) && secret.computedVisibility !== "unmasked") {
-    core.setSecret(value);
-  }
+const problems = processSecrets(secrets, {
+  core: sink,
+  injectEnvVars: core.getInput("inject-env-vars") === "true",
+  onInvalidName: ON_INVALID_NAME,
+});
 
-  if (core.getInput("inject-env-vars") === "true") {
-    core.exportVariable(key, value);
-  }
-}
+reportProblems(problems, { core: sink, onInvalidName: ON_INVALID_NAME, platform: process.platform });

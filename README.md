@@ -117,6 +117,55 @@ jobs:
     - run: printenv
 ```
 
+## Secret Names
+
+> **Beta:** Secret names beyond `UPPER_SNAKE_CASE` are currently in beta access and are not yet
+> generally available. Unless your workplace has been enrolled in the beta, secret names are still
+> restricted to uppercase letters, digits, and underscores, cannot begin with a digit, and none of
+> the guidance below applies to you.
+
+For workplaces in the beta, Doppler allows secret names beyond the traditional `UPPER_SNAKE_CASE`
+convention, including lowercase letters, dashes, and forward slashes. Every such secret is fetched,
+masked, and set, but not all of them can be read with the plain syntax shown above.
+
+| Name | `outputs` | Environment variable |
+| --- | --- | --- |
+| `API_KEY`, `api_key` | `outputs.API_KEY` | `$API_KEY` |
+| `MY-SECRET` | `outputs.MY-SECRET` | `printenv 'MY-SECRET'` |
+| `MY/SECRET`, `MY.SECRET`, `2FA_TOKEN` | `outputs['MY/SECRET']` | `printenv 'MY/SECRET'` |
+
+Two cases are worth calling out:
+
+- **Dashes work in outputs but not in shells.** `${{ steps.doppler.outputs.MY-SECRET }}` is valid,
+  for the same reason `steps.setup-node.outputs.node-version` is. But in a `run:` step, `$MY-SECRET`
+  expands to the empty `$MY` followed by the literal `-SECRET`, producing a wrong value rather than
+  an error. Use `printenv 'MY-SECRET'` or `${{ env['MY-SECRET'] }}`.
+- **Names differing only by case collide on Windows.** `api_key` and `API_KEY` are distinct
+  environment variables on Linux and macOS, but the same one on Windows runners. The action fails
+  the step when it detects this on Windows.
+
+The action logs a grouped warning describing any name that needs special handling. Use the
+`on-invalid-name` input to change that behavior:
+
+```yaml
+- uses: dopplerhq/secrets-fetch-action@v2.0.0
+  id: doppler
+  with:
+    doppler-token: ${{ secrets.DOPPLER_TOKEN }}
+    inject-env-vars: true
+    on-invalid-name: warn # warn (default) | error | skip
+```
+
+| Value | Behavior |
+| --- | --- |
+| `warn` | Set the secret anyway and log how to read it. The default, and never fails a build. |
+| `error` | Fail the step, listing every affected name. |
+| `skip` | Omit the affected output or environment variable, and set the rest. |
+
+Names containing a newline, carriage return, null byte, or `=` cannot be written to
+`$GITHUB_ENV` or `$GITHUB_OUTPUT` without corrupting them. Those are always skipped and always
+fail the step, regardless of `on-invalid-name`. Their values are still masked.
+
 ## Automatic Secrets Masking
 
 All secret values are masked with the exception of the Doppler meta variables:
