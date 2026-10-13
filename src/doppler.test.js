@@ -1,7 +1,7 @@
 import { describe, it, mock, afterEach } from "node:test";
 import assert from "node:assert";
 import https from "https";
-import { fetch, oidcAuth } from "./doppler.js";
+import { fetch, oidcAuth, shouldRetry, withRetry, DopplerApiError } from "./doppler.js";
 
 describe("Doppler API Client", () => {
   afterEach(() => {
@@ -109,6 +109,36 @@ describe("Doppler API Client", () => {
             if (event === "data") {
               const data = attemptCount < 2
                 ? "<html>Service Unavailable</html>"
+                : JSON.stringify({ secrets: mockSecrets });
+              handler(data);
+            } else if (event === "end") {
+              handler();
+            }
+            return mockResponse;
+          },
+        };
+        callback(mockResponse);
+        return { on: () => {} };
+      });
+
+      const result = await fetch("dp.st.test", null, null, "api.doppler.com");
+      assert.strictEqual(attemptCount, 2);
+      assert.deepStrictEqual(result, mockSecrets);
+    });
+
+    it("should retry on 503 (JSON request timeout) and succeed", async () => {
+      let attemptCount = 0;
+      const mockSecrets = { KEY: { computed: "value", computedVisibility: "masked" } };
+
+      mock.method(https, 'get', (url, options, callback) => {
+        attemptCount++;
+        const mockResponse = {
+          statusCode: attemptCount < 2 ? 503 : 200,
+          headers: { "content-type": "application/json; charset=utf-8" },
+          on: (event, handler) => {
+            if (event === "data") {
+              const data = attemptCount < 2
+                ? JSON.stringify({ success: false, messages: ["Request took longer than 29 seconds"] })
                 : JSON.stringify({ secrets: mockSecrets });
               handler(data);
             } else if (event === "end") {
@@ -306,7 +336,7 @@ describe("Doppler API Client", () => {
         };
       });
 
-      const result = await oidcAuth("identity-123", "oidc-token-456", "api.doppler.com");
+      const result = await oidcAuth("identity-123", async () => "oidc-token-456", "api.doppler.com");
       assert.strictEqual(result, mockToken);
 
       const parsedBody = JSON.parse(requestBody);
@@ -348,9 +378,48 @@ describe("Doppler API Client", () => {
         };
       });
 
-      const result = await oidcAuth("identity-123", "oidc-token-456", "api.doppler.com");
+      const result = await oidcAuth("identity-123", async () => "oidc-token-456", "api.doppler.com");
       assert.strictEqual(attemptCount, 2);
       assert.strictEqual(result, mockToken);
+    });
+
+    it("should retry on 503 (JSON request timeout) with a fresh OIDC token and succeed", async () => {
+      let attemptCount = 0;
+      const mockToken = "dp.st.generated-token";
+      const sentTokens = [];
+
+      mock.method(https, 'request', (_url, _options, callback) => {
+        attemptCount++;
+        const mockResponse = {
+          statusCode: attemptCount < 2 ? 503 : 200,
+          headers: { "content-type": "application/json; charset=utf-8" },
+          on: (event, handler) => {
+            if (event === "data") {
+              const data = attemptCount < 2
+                ? JSON.stringify({ success: false, messages: ["Request took longer than 29 seconds"] })
+                : JSON.stringify({ token: mockToken });
+              handler(data);
+            } else if (event === "end") {
+              handler();
+            }
+            return mockResponse;
+          },
+        };
+        callback(mockResponse);
+        return {
+          on: () => {},
+          write: (data) => {
+            sentTokens.push(JSON.parse(data).token);
+          },
+          end: () => {},
+        };
+      });
+
+      const result = await oidcAuth("identity-123", async () => `oidc-token-${sentTokens.length + 1}`, "api.doppler.com");
+      assert.strictEqual(attemptCount, 2);
+      assert.strictEqual(result, mockToken);
+      // The API rejects reused OIDC tokens, so each attempt must request a fresh one
+      assert.deepStrictEqual(sentTokens, ["oidc-token-1", "oidc-token-2"]);
     });
 
     it("should NOT retry on 401 (invalid OIDC token)", async () => {
@@ -382,12 +451,72 @@ describe("Doppler API Client", () => {
       });
 
       await assert.rejects(
-        async () => await oidcAuth("identity-123", "bad-token", "api.doppler.com"),
+        async () => await oidcAuth("identity-123", async () => "bad-token", "api.doppler.com"),
         {
           message: /Doppler API Error: Invalid OIDC token/,
         }
       );
       assert.strictEqual(attemptCount, 1);
+    });
+  });
+
+  describe("shouldRetry()", () => {
+    const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
+
+    it("should NOT retry errors that aren't DopplerApiErrors", () => {
+      assert.strictEqual(shouldRetry(new Error("ECONNRESET")), false);
+      assert.strictEqual(shouldRetry(undefined), false);
+    });
+
+    it("should retry 502, 503, and 504 regardless of content type", () => {
+      for (const statusCode of [502, 503, 504]) {
+        assert.strictEqual(shouldRetry(new DopplerApiError("", statusCode, JSON_CONTENT_TYPE)), true, `${statusCode} JSON`);
+        assert.strictEqual(shouldRetry(new DopplerApiError("", statusCode, "text/html")), true, `${statusCode} HTML`);
+        assert.strictEqual(shouldRetry(new DopplerApiError("", statusCode, undefined)), true, `${statusCode} no content type`);
+      }
+    });
+
+    it("should only retry other 5xx errors without a JSON body", () => {
+      assert.strictEqual(shouldRetry(new DopplerApiError("", 500, JSON_CONTENT_TYPE)), false);
+      assert.strictEqual(shouldRetry(new DopplerApiError("", 500, "text/html")), true);
+    });
+
+    it("should retry 429 and 1xx, but not other 4xx", () => {
+      assert.strictEqual(shouldRetry(new DopplerApiError("", 429, JSON_CONTENT_TYPE)), true);
+      assert.strictEqual(shouldRetry(new DopplerApiError("", 100, JSON_CONTENT_TYPE)), true);
+      assert.strictEqual(shouldRetry(new DopplerApiError("", 199, JSON_CONTENT_TYPE)), true);
+      assert.strictEqual(shouldRetry(new DopplerApiError("", 401, JSON_CONTENT_TYPE)), false);
+      assert.strictEqual(shouldRetry(new DopplerApiError("", 404, JSON_CONTENT_TYPE)), false);
+    });
+  });
+
+  describe("withRetry()", () => {
+    it("should retry any error when given a custom isRetryable", async () => {
+      let attemptCount = 0;
+
+      const result = await withRetry(async () => {
+        attemptCount++;
+        if (attemptCount < 3) {
+          throw new Error("Error message: socket hang up");
+        }
+        return "id-token";
+      }, { baseDelay: 1, isRetryable: () => true });
+
+      assert.strictEqual(attemptCount, 3);
+      assert.strictEqual(result, "id-token");
+    });
+
+    it("should throw the last error after max attempts", async () => {
+      let attemptCount = 0;
+
+      await assert.rejects(
+        withRetry(async () => {
+          attemptCount++;
+          throw new Error(`failure ${attemptCount}`);
+        }, { maxAttempts: 3, baseDelay: 1, isRetryable: () => true }),
+        { message: "failure 3" }
+      );
+      assert.strictEqual(attemptCount, 3);
     });
   });
 

@@ -17053,6 +17053,13 @@ function debug(message) {
 function error(message, properties = {}) {
 	issueCommand("error", toCommandProperties(properties), message instanceof Error ? message.toString() : message);
 }
+/**
+* Writes info to log with console.log.
+* @param message info message
+*/
+function info(message) {
+	process.stdout.write(message + os$1.EOL);
+}
 function getIDToken(aud) {
 	return __awaiter(this, void 0, void 0, function* () {
 		return yield OidcClient.getIDToken(aud);
@@ -17085,26 +17092,30 @@ var DopplerApiError = class extends Error {
 * Determines if a network error should be retried
 */
 function shouldRetry(error) {
-	if (!error instanceof DopplerApiError) return false;
+	if (!(error instanceof DopplerApiError)) return false;
 	const { statusCode, contentType } = error;
-	return statusCode === 429 || statusCode >= 100 && statusCode < 199 || statusCode >= 500 && statusCode <= 599 && !contentType?.startsWith("application/json");
+	if (statusCode >= 502 && statusCode <= 504) return true;
+	return statusCode === 429 || statusCode >= 100 && statusCode <= 199 || statusCode >= 500 && statusCode <= 599 && !contentType?.startsWith("application/json");
 }
 /**
 * Retry wrapper with exponential backoff
 * @param {Function} fn - The function to retry
-* @param {number} maxAttempts - Maximum number of attempts
-* @param {number} baseDelay - Base delay in ms
+* @param {object} [options]
+* @param {number} [options.maxAttempts] - Maximum number of attempts
+* @param {number} [options.baseDelay] - Base delay in ms
+* @param {Function} [options.isRetryable] - Determines if an error should be retried
 * @returns {Promise}
 */
-async function withRetry(fn, maxAttempts = MAX_ATTEMPTS, baseDelay = BASE_DELAY) {
+async function withRetry(fn, { maxAttempts = MAX_ATTEMPTS, baseDelay = BASE_DELAY, isRetryable = shouldRetry } = {}) {
 	let lastError;
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) try {
 		return await fn();
 	} catch (error) {
 		lastError = error;
 		if (attempt === maxAttempts) break;
-		if (!shouldRetry(error)) break;
+		if (!isRetryable(error)) break;
 		const delay = baseDelay * Math.pow(2, attempt) + Math.random() * baseDelay;
+		info(`${String(error?.message ?? error).replace(/\s+/g, " ")} (attempt ${attempt}/${maxAttempts}), retrying in ${(delay / 1e3).toFixed(1)}s`);
 		await new Promise((resolve) => setTimeout(resolve, delay));
 	}
 	throw lastError;
@@ -17202,12 +17213,13 @@ async function fetch(dopplerToken, dopplerProject, dopplerConfig, apiDomain) {
 /**
 * Exchange an OIDC token for a short lived Doppler service account token with retry logic
 * @param {string} identityId 
-* @param {string} oidcToken 
+* @param {Function} getOidcToken - Called on every attempt, since the API rejects reused OIDC tokens
+*   and a timed out exchange may still have consumed the previous one
 * @param {string} apiDomain 
 * @returns {Promise<string>}
 */
-async function oidcAuth(identityId, oidcToken, apiDomain) {
-	return withRetry(() => _oidcAuth(identityId, oidcToken, apiDomain));
+async function oidcAuth(identityId, getOidcToken, apiDomain) {
+	return withRetry(async () => _oidcAuth(identityId, await getOidcToken(), apiDomain));
 }
 //#endregion
 //#region src/index.js
@@ -17223,9 +17235,12 @@ const API_DOMAIN = getInput("doppler-api-domain");
 let DOPPLER_TOKEN = "";
 if (AUTH_METHOD === "oidc") {
 	const DOPPLER_IDENTITY_ID = getInput("doppler-identity-id", { required: true });
-	const oidcToken = await getIDToken();
-	setSecret(oidcToken);
-	DOPPLER_TOKEN = await oidcAuth(DOPPLER_IDENTITY_ID, oidcToken, API_DOMAIN);
+	if (!process.env.ACTIONS_ID_TOKEN_REQUEST_URL || !process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN) {
+		setFailed("Unable to request a GitHub OIDC token. The job or workflow requires the `id-token: write` permission when auth-method is \"oidc\".");
+		process.exit();
+	}
+	const getOidcToken = () => withRetry(() => getIDToken(), { isRetryable: (error) => !/Error Code : 4\d\d/.test(error?.message) });
+	DOPPLER_TOKEN = await oidcAuth(DOPPLER_IDENTITY_ID, getOidcToken, API_DOMAIN);
 } else if (AUTH_METHOD === "token") DOPPLER_TOKEN = getInput("doppler-token", { required: true });
 else {
 	setFailed("Unsupported auth-method");
