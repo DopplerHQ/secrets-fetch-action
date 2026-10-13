@@ -1,7 +1,7 @@
 import { describe, it, mock, afterEach } from "node:test";
 import assert from "node:assert";
 import https from "https";
-import { fetch, oidcAuth, shouldRetry, withRetry, DopplerApiError } from "./doppler.js";
+import { fetch, oidcAuth, shouldRetry, shouldRetryIDToken, withRetry, DopplerApiError } from "./doppler.js";
 
 describe("Doppler API Client", () => {
   afterEach(() => {
@@ -487,6 +487,43 @@ describe("Doppler API Client", () => {
       assert.strictEqual(shouldRetry(new DopplerApiError("", 199, JSON_CONTENT_TYPE)), true);
       assert.strictEqual(shouldRetry(new DopplerApiError("", 401, JSON_CONTENT_TYPE)), false);
       assert.strictEqual(shouldRetry(new DopplerApiError("", 404, JSON_CONTENT_TYPE)), false);
+    });
+  });
+
+  describe("shouldRetryIDToken()", () => {
+    // The shape of the errors getIDToken() rejects with in @actions/core v3
+    const idTokenError = (code, message) =>
+      new Error(`Error message: Failed to get ID Token. \n \n        Error Code : ${code}\n \n        Error Message: ${message}`);
+
+    it("should retry connection failures", () => {
+      assert.strictEqual(shouldRetryIDToken(idTokenError(undefined, "connect ECONNREFUSED 127.0.0.1:9")), true);
+      assert.strictEqual(shouldRetryIDToken(idTokenError(undefined, "getaddrinfo ENOTFOUND pipelines.actions.githubusercontent.com")), true);
+      assert.strictEqual(shouldRetryIDToken(idTokenError(undefined, "socket hang up")), true);
+      assert.strictEqual(shouldRetryIDToken(idTokenError(undefined, "Request timeout: /token?api-version=2.0")), true);
+      // A proxy refusal and a proxy outage can't be told apart, so both are retried
+      assert.strictEqual(shouldRetryIDToken(idTokenError(undefined, "tunneling socket could not be established, statusCode=403")), true);
+    });
+
+    it("should retry 5xx and 429 responses", () => {
+      assert.strictEqual(shouldRetryIDToken(idTokenError(500, "Internal Server Error")), true);
+      assert.strictEqual(shouldRetryIDToken(idTokenError(503, "Service Unavailable")), true);
+      assert.strictEqual(shouldRetryIDToken(idTokenError(429, "slow down")), true);
+    });
+
+    it("should NOT retry other 4xx responses", () => {
+      assert.strictEqual(shouldRetryIDToken(idTokenError(401, "Unauthorized")), false);
+      assert.strictEqual(shouldRetryIDToken(idTokenError(403, "Failed request: (403)")), false);
+      assert.strictEqual(shouldRetryIDToken(idTokenError(404, "Not Found")), false);
+    });
+
+    it("should NOT retry responses without a token", () => {
+      // How a 404, or a 200 without a token in the body, surfaces
+      assert.strictEqual(shouldRetryIDToken(new Error("Error message: Response json body do not have ID Token field")), false);
+    });
+
+    it("should retry errors without a message", () => {
+      assert.strictEqual(shouldRetryIDToken(undefined), true);
+      assert.strictEqual(shouldRetryIDToken("unexpected"), true);
     });
   });
 

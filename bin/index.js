@@ -17098,6 +17098,17 @@ function shouldRetry(error) {
 	return statusCode === 429 || statusCode >= 100 && statusCode <= 199 || statusCode >= 500 && statusCode <= 599 && !contentType?.startsWith("application/json");
 }
 /**
+* Determines if a GitHub OIDC token request error should be retried
+* getIDToken() only retries 502/503/504 itself, and its errors carry nothing but a message, so retry everything except
+* failures that are recognizably permanent from that message: a 4xx other than 429, or a response with no token in it
+* (which is also how a 404 surfaces)
+*/
+function shouldRetryIDToken(error) {
+	const message = String(error?.message ?? "");
+	if (/Error Code : (?!429)4\d\d/.test(message)) return false;
+	return !message.includes("Response json body do not have ID Token field");
+}
+/**
 * Retry wrapper with exponential backoff
 * @param {Function} fn - The function to retry
 * @param {object} [options]
@@ -17239,7 +17250,7 @@ if (AUTH_METHOD === "oidc") {
 		setFailed("Unable to request a GitHub OIDC token. The job or workflow requires the `id-token: write` permission when auth-method is \"oidc\".");
 		process.exit();
 	}
-	const getOidcToken = () => withRetry(() => getIDToken(), { isRetryable: (error) => !/Error Code : 4\d\d/.test(error?.message) });
+	const getOidcToken = () => withRetry(() => getIDToken(), { isRetryable: shouldRetryIDToken });
 	DOPPLER_TOKEN = await oidcAuth(DOPPLER_IDENTITY_ID, getOidcToken, API_DOMAIN);
 } else if (AUTH_METHOD === "token") DOPPLER_TOKEN = getInput("doppler-token", { required: true });
 else {

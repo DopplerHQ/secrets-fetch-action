@@ -42,6 +42,21 @@ export function shouldRetry(error) {
 }
 
 /**
+ * Determines if a GitHub OIDC token request error should be retried
+ * getIDToken() only retries 502/503/504 itself, and its errors carry nothing but a message, so retry everything except
+ * failures that are recognizably permanent from that message: a 4xx other than 429, or a response with no token in it
+ * (which is also how a 404 surfaces)
+ */
+export function shouldRetryIDToken(error) {
+  const message = String(error?.message ?? "");
+  if (/Error Code : (?!429)4\d\d/.test(message)) {
+    return false;
+  }
+  // Matches @actions/core's message verbatim, typo included
+  return !message.includes("Response json body do not have ID Token field");
+}
+
+/**
  * Retry wrapper with exponential backoff
  * @param {Function} fn - The function to retry
  * @param {object} [options]

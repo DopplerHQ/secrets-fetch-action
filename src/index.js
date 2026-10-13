@@ -1,5 +1,5 @@
 import * as core from "@actions/core";
-import { fetch, oidcAuth, withRetry } from "./doppler.js";
+import { fetch, oidcAuth, withRetry, shouldRetryIDToken } from "./doppler.js";
 
 // For local testing
 if (process.env.NODE_ENV === "development" && process.env.DOPPLER_TOKEN) {
@@ -21,10 +21,7 @@ if (AUTH_METHOD === "oidc") {
     core.setFailed("Unable to request a GitHub OIDC token. The job or workflow requires the `id-token: write` permission when auth-method is \"oidc\".");
     process.exit();
   }
-  // getIDToken() only retries 502/503/504 and only exposes the status code in its message, so retry everything except 4xx
-  const getOidcToken = () => withRetry(() => core.getIDToken(), {
-    isRetryable: (error) => !/Error Code : 4\d\d/.test(error?.message),
-  });
+  const getOidcToken = () => withRetry(() => core.getIDToken(), { isRetryable: shouldRetryIDToken });
   DOPPLER_TOKEN = await oidcAuth(DOPPLER_IDENTITY_ID, getOidcToken, API_DOMAIN);
 } else if (AUTH_METHOD === "token") {
   DOPPLER_TOKEN = core.getInput("doppler-token", { required: true });
