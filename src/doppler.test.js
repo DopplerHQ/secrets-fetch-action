@@ -90,7 +90,7 @@ describe("Doppler API Client", () => {
         return { on: () => {} };
       });
 
-      const result = await fetch("dp.st.test", null, null, "api.doppler.com");
+      const result = await fetch("dp.st.test", null, null, "api.doppler.com", { baseDelay: 1 });
       assert.strictEqual(attemptCount, 3);
       assert.deepStrictEqual(result, mockSecrets);
     });
@@ -121,7 +121,7 @@ describe("Doppler API Client", () => {
         return { on: () => {} };
       });
 
-      const result = await fetch("dp.st.test", null, null, "api.doppler.com");
+      const result = await fetch("dp.st.test", null, null, "api.doppler.com", { baseDelay: 1 });
       assert.strictEqual(attemptCount, 2);
       assert.deepStrictEqual(result, mockSecrets);
     });
@@ -251,7 +251,8 @@ describe("Doppler API Client", () => {
       await assert.rejects(
         async () => await fetch("dp.st.invalid", null, null, "api.doppler.com"),
         {
-          message: /Doppler API Error: Invalid token/,
+          // Anchored to check a non-retryable error gets no "gave up after" suffix
+          message: /^Doppler API Error: Invalid token$/,
         }
       );
       assert.strictEqual(attemptCount, 1);
@@ -450,7 +451,7 @@ describe("Doppler API Client", () => {
         };
       });
 
-      const result = await oidcAuth("identity-123", async () => "oidc-token-456", "api.doppler.com");
+      const result = await oidcAuth("identity-123", async () => "oidc-token-456", "api.doppler.com", { baseDelay: 1 });
       assert.strictEqual(attemptCount, 2);
       assert.strictEqual(result, mockToken);
     });
@@ -561,6 +562,13 @@ describe("Doppler API Client", () => {
       assert.strictEqual(tokenAttempts, 2);
       assert.strictEqual(result, mockToken);
     });
+
+    it("should rethrow a non-Error thrown while getting the OIDC token unchanged", async () => {
+      await assert.rejects(
+        oidcAuth("identity-123", async () => { throw "boom"; }, "api.doppler.com", { maxAttempts: 2, baseDelay: 1 }),
+        (error) => error === "boom"
+      );
+    });
   });
 
   describe("shouldRetry()", () => {
@@ -580,6 +588,45 @@ describe("Doppler API Client", () => {
       assert.strictEqual(shouldRetry(new DopplerApiError("Doppler API Error: Invalid token", 401)), false);
       assert.strictEqual(shouldRetry(new DopplerApiError("Doppler API Error: Forbidden", 403)), false);
       assert.strictEqual(shouldRetry(new DopplerApiError("Doppler API Error: Unable to validate OIDC JWT token: claim \"sub\" does not match", 400)), false);
+      // Even when the message suggests trying again
+      assert.strictEqual(shouldRetry(new DopplerApiError("Doppler API Error: Unable to authenticate. Please check your credentials and try again.", 400)), false);
+    });
+
+    it("should retry a 400 when the API cannot reach the OIDC provider", () => {
+      assert.strictEqual(shouldRetry(new DopplerApiError("Doppler API Error: Unable to validate OIDC JWT token: could not retrieve JSON Web Key Set", 400)), true);
+      assert.strictEqual(shouldRetry(new DopplerApiError("Doppler API Error: Unable to retrieve Open ID Discovery Document", 400)), true);
+    });
+
+    it("should NOT retry a 400 for an OIDC provider response that is too large", () => {
+      assert.strictEqual(shouldRetry(new DopplerApiError("Doppler API Error: Unable to validate OIDC JWT token: could not retrieve JSON Web Key Set: Response exceeds 1048576 bytes", 400)), false);
+      assert.strictEqual(shouldRetry(new DopplerApiError("Doppler API Error: Unable to retrieve Open ID Discovery Document: Response exceeds 1048576 bytes", 400)), false);
+    });
+
+    describe("GitHub OIDC token request errors", () => {
+      // Builds an error in the format getIDToken() rejects with in @actions/core v3
+      const idTokenError = (code, message) =>
+        new Error(`Error message: Failed to get ID Token. \n \n        Error Code : ${code}\n \n        Error Message: ${message}`);
+
+      it("should retry connection failures, 5xx, and 429", () => {
+        assert.strictEqual(shouldRetry(idTokenError(undefined, "connect ECONNREFUSED 127.0.0.1:9")), true);
+        assert.strictEqual(shouldRetry(idTokenError(undefined, "socket hang up")), true);
+        assert.strictEqual(shouldRetry(idTokenError(500, "Internal Server Error")), true);
+        assert.strictEqual(shouldRetry(idTokenError(429, "slow down")), true);
+      });
+
+      it("should NOT retry other 4xx responses", () => {
+        assert.strictEqual(shouldRetry(idTokenError(401, "Unauthorized")), false);
+        assert.strictEqual(shouldRetry(idTokenError(403, "Failed request: (403)")), false);
+      });
+
+      it("should retry a 5xx whose body mentions a 4xx", () => {
+        assert.strictEqual(shouldRetry(idTokenError(500, "upstream said Error Code : 403")), true);
+      });
+
+      it("should NOT retry a response without a token", () => {
+        // getIDToken()'s error for a 404, or a 200 without a token in the body
+        assert.strictEqual(shouldRetry(new Error("Error message: Response json body do not have ID Token field")), false);
+      });
     });
   });
 
@@ -604,9 +651,9 @@ describe("Doppler API Client", () => {
       });
 
       await assert.rejects(
-        async () => await fetch("dp.st.test", null, null, "api.doppler.com", { baseDelay: 1 }),
+        async () => await fetch("dp.st.test", null, null, "api.doppler.com", { maxAttempts: 1 }),
         {
-          message: /Doppler API Error: 500 Internal Server Error/,
+          message: /^Doppler API Error: 500 Internal Server Error/,
         }
       );
     });
@@ -637,7 +684,7 @@ describe("Doppler API Client", () => {
         return { on: () => {} };
       });
 
-      const result = await fetch("dp.st.test", null, null, "api.doppler.com");
+      const result = await fetch("dp.st.test", null, null, "api.doppler.com", { baseDelay: 1 });
       assert.strictEqual(attemptCount, 2);
       assert.deepStrictEqual(result, mockSecrets);
     });
