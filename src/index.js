@@ -13,12 +13,22 @@ if (process.env.NODE_ENV === "development" && process.env.DOPPLER_TOKEN) {
 const AUTH_METHOD = core.getInput("auth-method");
 const API_DOMAIN = core.getInput("doppler-api-domain");
 let DOPPLER_TOKEN = "";
+const RETRY_OPTIONS = {
+  onRetry: (error, attempt, delay) => core.warning(`${error.message} (attempt ${attempt}), retrying in ${(delay / 1000).toFixed(1)}s`),
+};
 
 if (AUTH_METHOD === "oidc") {
   const DOPPLER_IDENTITY_ID = core.getInput("doppler-identity-id", { required: true });
-  const oidcToken = await core.getIDToken();
-  core.setSecret(oidcToken);
-  DOPPLER_TOKEN = await oidcAuth(DOPPLER_IDENTITY_ID, oidcToken, API_DOMAIN);
+  if (!process.env.ACTIONS_ID_TOKEN_REQUEST_URL || !process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN) {
+    core.setFailed("auth-method \"oidc\" requires the `id-token: write` permission on the job or workflow");
+    process.exit();
+  }
+  const getOidcToken = async () => {
+    const oidcToken = await core.getIDToken();
+    core.setSecret(oidcToken);
+    return oidcToken;
+  };
+  DOPPLER_TOKEN = await oidcAuth(DOPPLER_IDENTITY_ID, getOidcToken, API_DOMAIN, RETRY_OPTIONS);
 } else if (AUTH_METHOD === "token") {
   DOPPLER_TOKEN = core.getInput("doppler-token", { required: true });
 } else {
@@ -42,7 +52,7 @@ if (IS_SA_TOKEN && !(DOPPLER_PROJECT && DOPPLER_CONFIG)) {
   process.exit();
 }
 
-const secrets = await fetch(DOPPLER_TOKEN, DOPPLER_PROJECT, DOPPLER_CONFIG, API_DOMAIN);
+const secrets = await fetch(DOPPLER_TOKEN, DOPPLER_PROJECT, DOPPLER_CONFIG, API_DOMAIN, RETRY_OPTIONS);
 
 for (const [key, secret] of Object.entries(secrets)) {
   const value = secret.computed || "";
