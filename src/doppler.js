@@ -5,11 +5,15 @@ const MAX_ATTEMPTS = 8;
 const BASE_DELAY = 1000;
 const MAX_DELAY = 20_000;
 const TOTAL_TIMEOUT = 300_000;
+// Ends a request on a silent connection, which would otherwise hang until the job times out, since TOTAL_TIMEOUT is
+// only checked between attempts. Longer than the API's own 29s timeout, so a slow request gets its 503 instead
 const REQUEST_TIMEOUT = 35_000;
+// Caps a longer Retry-After, which would otherwise push the retry past TOTAL_TIMEOUT and end the call
 const MAX_RETRY_AFTER = 60_000;
 const TRANSIENT_STATUS_CODES = [408, 425, 429];
-// The API reports its own upstream outages as JSON errors, e.g. a 400 when it cannot fetch GitHub's JWKS
-const TRANSIENT_MESSAGES = /JSON Web Key Set|took longer than|temporarily unavailable|try again/i;
+// Identifies API 400s caused by a temporary failure to reach the OIDC provider, so they're retried. Anchored to exclude
+// the permanent "Response exceeds" variant
+const TRANSIENT_MESSAGES = /(could not retrieve JSON Web Key Set|Unable to retrieve Open ID Discovery Document)$/;
 
 /**
  * Custom error class for Doppler API errors that the retry wrapper can use to determine if an error should be retried
@@ -18,7 +22,7 @@ export class DopplerApiError extends Error {
   /**
    * @param {string} message
    * @param {number} statusCode
-   * @param {number | undefined} retryAfter - Delay in ms requested by the Retry-After header
+   * @param {number | undefined} retryAfter - How long the API asked to wait before retrying, in ms
    */
   constructor(message, statusCode, retryAfter) {
     super(message);
@@ -30,7 +34,7 @@ export class DopplerApiError extends Error {
 /**
  * Parses a Retry-After header given in seconds or as an HTTP date
  * @param {string | undefined} header
- * @returns {number | undefined} Delay in ms
+ * @returns {number | undefined} Delay in ms, or undefined if the header is missing or invalid
  */
 function parseRetryAfter(header) {
   if (!header) {
@@ -42,12 +46,14 @@ function parseRetryAfter(header) {
 }
 
 /**
- * Determines if an error should be retried
- * Network errors and timeouts are retried. API errors are retried unless they are a 4xx that is not transient.
+ * Determines if an error should be retried: everything except a non-transient API 4xx or a permanent OIDC token failure
  */
 export function shouldRetry(error) {
   if (!(error instanceof DopplerApiError)) {
-    return true;
+    // Network errors and getIDToken() failures. getIDToken() only reports the status code in its message, so match its
+    // status line. Don't retry a 4xx other than 429, or a missing token (what a 404 returns). The typo is @actions/core's
+    const message = String(error?.message ?? "");
+    return !/^\s*Error Code : (?!429)4\d\d$/m.test(message) && !message.includes("Response json body do not have ID Token field");
   }
   const { statusCode, message } = error;
   return statusCode >= 500 || (statusCode >= 100 && statusCode <= 199) || TRANSIENT_STATUS_CODES.includes(statusCode) || TRANSIENT_MESSAGES.test(message);
@@ -64,16 +70,26 @@ export function shouldRetry(error) {
  * @param {Function} [options.onRetry] - Called with the error, attempt, and delay before every retry
  * @returns {Promise}
  */
-async function withRetry(fn, { maxAttempts = MAX_ATTEMPTS, baseDelay = BASE_DELAY, maxDelay = MAX_DELAY, deadline = Date.now() + TOTAL_TIMEOUT, onRetry = () => {} } = {}) {
+async function withRetry(fn, {
+  maxAttempts = MAX_ATTEMPTS,
+  baseDelay = BASE_DELAY,
+  maxDelay = MAX_DELAY,
+  deadline = Date.now() + TOTAL_TIMEOUT,
+  onRetry = () => {},
+} = {}) {
   for (let attempt = 1; ; attempt++) {
     try {
       return await fn();
     } catch (error) {
-      // Exponential backoff with equal jitter, never shorter than the API's Retry-After
+      // Exponential backoff with equal jitter to spread retries out, but never shorter than the API's Retry-After
       const ceiling = Math.min(maxDelay, baseDelay * 2 ** (attempt - 1));
-      const delay = Math.max(error.retryAfter ?? 0, ceiling / 2 + Math.random() * ceiling / 2);
-      if (attempt >= maxAttempts || !shouldRetry(error) || Date.now() + delay >= deadline) {
-        error.message = `${error.message} (gave up after ${attempt} attempt(s))`;
+      const delay = Math.max(error?.retryAfter ?? 0, ceiling / 2 + Math.random() * ceiling / 2);
+      const retryable = shouldRetry(error);
+      if (attempt >= maxAttempts || !retryable || delay >= deadline - Date.now()) {
+        // Tells the user retries ran out, which only applies to retryable errors. A thrown non-Error has no message
+        if (retryable && error instanceof Error) {
+          error.message = `${error.message} (gave up after ${attempt} attempt(s))`;
+        }
         throw error;
       }
       onRetry(error, attempt, delay);
@@ -205,7 +221,7 @@ async function _oidcAuth(identityId, oidcToken, apiDomain) {
  * @param {string | null} [dopplerProject]
  * @param {string | null} [dopplerConfig]
  * @param {string} apiDomain 
- * @param {object} [retryOptions] - Passed to withRetry
+ * @param {object} [retryOptions]
  * @returns {Promise<Record<string, Record>>}
  */
 export async function fetch(dopplerToken, dopplerProject, dopplerConfig, apiDomain, retryOptions) {
@@ -215,9 +231,9 @@ export async function fetch(dopplerToken, dopplerProject, dopplerConfig, apiDoma
 /**
  * Exchange an OIDC token for a short lived Doppler service account token with retry logic
  * @param {string} identityId 
- * @param {Function} getOidcToken - Called on every attempt, since the API rejects a reused OIDC token
+ * @param {Function} getOidcToken - Fetches a GitHub OIDC token; called on every attempt, since the API rejects a reused one
  * @param {string} apiDomain 
- * @param {object} [retryOptions] - Passed to withRetry
+ * @param {object} [retryOptions]
  * @returns {Promise<string>}
  */
 export async function oidcAuth(identityId, getOidcToken, apiDomain, retryOptions) {

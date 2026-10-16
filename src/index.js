@@ -14,7 +14,8 @@ const AUTH_METHOD = core.getInput("auth-method");
 const API_DOMAIN = core.getInput("doppler-api-domain");
 let DOPPLER_TOKEN = "";
 const RETRY_OPTIONS = {
-  onRetry: (error, attempt, delay) => core.warning(`${error.message} (attempt ${attempt}), retrying in ${(delay / 1000).toFixed(1)}s`),
+  // Fixed prefix on a single line, so an error message can't start a line with a workflow command
+  onRetry: (error, attempt, delay) => core.info(`Attempt ${attempt} failed, retrying in ${(delay / 1000).toFixed(1)}s: ${String(error?.message ?? error).replace(/\s+/g, " ")}`),
 };
 
 if (AUTH_METHOD === "oidc") {
@@ -23,12 +24,8 @@ if (AUTH_METHOD === "oidc") {
     core.setFailed("auth-method \"oidc\" requires the `id-token: write` permission on the job or workflow");
     process.exit();
   }
-  const getOidcToken = async () => {
-    const oidcToken = await core.getIDToken();
-    core.setSecret(oidcToken);
-    return oidcToken;
-  };
-  DOPPLER_TOKEN = await oidcAuth(DOPPLER_IDENTITY_ID, getOidcToken, API_DOMAIN, RETRY_OPTIONS);
+  // Passed directly, since getIDToken() already masks each token it returns
+  DOPPLER_TOKEN = await oidcAuth(DOPPLER_IDENTITY_ID, core.getIDToken, API_DOMAIN, RETRY_OPTIONS);
 } else if (AUTH_METHOD === "token") {
   DOPPLER_TOKEN = core.getInput("doppler-token", { required: true });
 } else {
