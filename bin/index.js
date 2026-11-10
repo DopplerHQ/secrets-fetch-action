@@ -17168,6 +17168,13 @@ function debug(message) {
 function error(message, properties = {}) {
 	issueCommand("error", toCommandProperties(properties), message instanceof Error ? message.toString() : message);
 }
+/**
+* Writes info to log with console.log.
+* @param message info message
+*/
+function info(message) {
+	process.stdout.write(message + os$1.EOL);
+}
 function getIDToken(aud) {
 	return __awaiter(this, void 0, void 0, function* () {
 		return yield OidcClient.getIDToken(aud);
@@ -17178,8 +17185,18 @@ function getIDToken(aud) {
 const VERSION = "1.3.0";
 //#endregion
 //#region src/doppler.js
-const MAX_ATTEMPTS = 5;
-const BASE_DELAY = 500;
+const MAX_ATTEMPTS = 8;
+const BASE_DELAY = 1e3;
+const MAX_DELAY = 2e4;
+const TOTAL_TIMEOUT = 3e5;
+const REQUEST_TIMEOUT = 35e3;
+const MAX_RETRY_AFTER = 6e4;
+const TRANSIENT_STATUS_CODES = [
+	408,
+	425,
+	429
+];
+const TRANSIENT_MESSAGES = /(could not retrieve JSON Web Key Set|Unable to retrieve Open ID Discovery Document)$/;
 /**
 * Custom error class for Doppler API errors that the retry wrapper can use to determine if an error should be retried
 */
@@ -17187,42 +17204,61 @@ var DopplerApiError = class extends Error {
 	/**
 	* @param {string} message
 	* @param {number} statusCode
-	* @param {string} contentType
+	* @param {number | undefined} retryAfter - How long the API asked to wait before retrying, in ms
 	*/
-	constructor(message, statusCode, contentType) {
+	constructor(message, statusCode, retryAfter) {
 		super(message);
 		this.statusCode = statusCode;
-		this.contentType = contentType;
+		this.retryAfter = retryAfter;
 	}
 };
 /**
-* Adapted from https://github.com/DopplerHQ/cli/blob/b008b823ec58f6982e26392b6fd0c30345e100a0/pkg/http/http.go#L359-L364
-* Determines if a network error should be retried
+* Parses a Retry-After header given in seconds or as an HTTP date
+* @param {string | undefined} header
+* @returns {number | undefined} Delay in ms, or undefined if the header is missing or invalid
+*/
+function parseRetryAfter(header) {
+	if (!header) return;
+	const seconds = Number(header);
+	const delay = Number.isFinite(seconds) ? seconds * 1e3 : Date.parse(header) - Date.now();
+	return Number.isFinite(delay) && delay >= 0 ? Math.min(delay, MAX_RETRY_AFTER) : void 0;
+}
+/**
+* Determines if an error should be retried: everything except a non-transient API 4xx or a permanent OIDC token failure
 */
 function shouldRetry(error) {
-	if (!error instanceof DopplerApiError) return false;
-	const { statusCode, contentType } = error;
-	return statusCode === 429 || statusCode >= 100 && statusCode < 199 || statusCode >= 500 && statusCode <= 599 && !contentType?.startsWith("application/json");
+	if (!(error instanceof DopplerApiError)) {
+		const message = String(error?.message ?? "");
+		return !/^\s*Error Code : (?!429)4\d\d$/m.test(message) && !message.includes("Response json body do not have ID Token field");
+	}
+	const { statusCode, message } = error;
+	return statusCode >= 500 || statusCode >= 100 && statusCode <= 199 || TRANSIENT_STATUS_CODES.includes(statusCode) || TRANSIENT_MESSAGES.test(message);
 }
 /**
 * Retry wrapper with exponential backoff
 * @param {Function} fn - The function to retry
-* @param {number} maxAttempts - Maximum number of attempts
-* @param {number} baseDelay - Base delay in ms
+* @param {object} [options]
+* @param {number} [options.maxAttempts] - Maximum number of attempts
+* @param {number} [options.baseDelay] - Base delay in ms, doubled on every attempt
+* @param {number} [options.maxDelay] - Maximum delay in ms between attempts
+* @param {number} [options.deadline] - Timestamp in ms after which no further attempt starts
+* @param {Function} [options.onRetry] - Called with the error, attempt, and delay before every retry
 * @returns {Promise}
 */
-async function withRetry(fn, maxAttempts = MAX_ATTEMPTS, baseDelay = BASE_DELAY) {
-	let lastError;
-	for (let attempt = 1; attempt <= maxAttempts; attempt++) try {
+async function withRetry(fn, { maxAttempts = MAX_ATTEMPTS, baseDelay = BASE_DELAY, maxDelay = MAX_DELAY, deadline = Date.now() + TOTAL_TIMEOUT, onRetry = () => {} } = {}) {
+	for (let attempt = 1;; attempt++) try {
 		return await fn();
 	} catch (error) {
-		lastError = error;
-		if (attempt === maxAttempts) break;
-		if (!shouldRetry(error)) break;
-		const delay = baseDelay * Math.pow(2, attempt) + Math.random() * baseDelay;
+		const ceiling = Math.min(maxDelay, baseDelay * 2 ** (attempt - 1));
+		const delay = Math.max(error?.retryAfter ?? 0, ceiling / 2 + Math.random() * ceiling / 2);
+		const retryable = shouldRetry(error);
+		if (attempt >= maxAttempts || !retryable || delay >= deadline - Date.now()) {
+			if (retryable && error instanceof Error) error.message = `${error.message} (gave up after ${attempt} attempt(s))`;
+			throw error;
+		}
+		onRetry(error, attempt, delay);
 		await new Promise((resolve) => setTimeout(resolve, delay));
 	}
-	throw lastError;
 }
 /**
 * Internal fetch function without retry logic
@@ -17241,22 +17277,27 @@ async function _fetch(dopplerToken, dopplerProject, dopplerConfig, apiDomain) {
 			url.searchParams.append("project", dopplerProject);
 			url.searchParams.append("config", dopplerConfig);
 		}
-		https.get(url.href, { headers: {
-			Authorization: authHeader,
-			"user-agent": userAgent,
-			"accepts": "application/json"
-		} }, (res) => {
+		const request = https.get(url.href, {
+			headers: {
+				Authorization: authHeader,
+				"user-agent": userAgent,
+				"accepts": "application/json"
+			},
+			timeout: REQUEST_TIMEOUT
+		}, (res) => {
 			let payload = "";
 			res.on("data", (data) => payload += data);
 			res.on("end", () => {
 				if (res.statusCode === 200) resolve(JSON.parse(payload).secrets);
 				else try {
-					reject(new DopplerApiError(`Doppler API Error: ${JSON.parse(payload).messages.join(" ")}`, res.statusCode, res.headers["content-type"]));
+					reject(new DopplerApiError(`Doppler API Error: ${JSON.parse(payload).messages.join(" ")}`, res.statusCode, parseRetryAfter(res.headers["retry-after"])));
 				} catch (error) {
-					reject(new DopplerApiError(`Doppler API Error: ${res.statusCode} ${res.statusMessage}`, res.statusCode, res.headers["content-type"]));
+					reject(new DopplerApiError(`Doppler API Error: ${res.statusCode} ${res.statusMessage}`, res.statusCode, parseRetryAfter(res.headers["retry-after"])));
 				}
 			});
-		}).on("error", (error) => {
+		});
+		request.on("timeout", () => request.destroy(/* @__PURE__ */ new Error(`request timed out after ${REQUEST_TIMEOUT / 1e3}s`)));
+		request.on("error", (error) => {
 			reject(/* @__PURE__ */ new Error(`Doppler API Error: ${error}`));
 		});
 	});
@@ -17283,19 +17324,21 @@ async function _oidcAuth(identityId, oidcToken, apiDomain) {
 				"Content-Type": "application/json",
 				"Content-Length": body.length
 			},
-			method: "POST"
+			method: "POST",
+			timeout: REQUEST_TIMEOUT
 		}, (res) => {
 			let payload = "";
 			res.on("data", (data) => payload += data);
 			res.on("end", () => {
 				if (res.statusCode === 200) resolve(JSON.parse(payload).token);
 				else try {
-					reject(new DopplerApiError(`Doppler API Error: ${JSON.parse(payload).messages.join(" ")}`, res.statusCode, res.headers["content-type"]));
+					reject(new DopplerApiError(`Doppler API Error: ${JSON.parse(payload).messages.join(" ")}`, res.statusCode, parseRetryAfter(res.headers["retry-after"])));
 				} catch (error) {
-					reject(new DopplerApiError(`Doppler API Error: ${res.statusCode} ${res.statusMessage}`, res.statusCode, res.headers["content-type"]));
+					reject(new DopplerApiError(`Doppler API Error: ${res.statusCode} ${res.statusMessage}`, res.statusCode, parseRetryAfter(res.headers["retry-after"])));
 				}
 			});
 		});
+		request.on("timeout", () => request.destroy(/* @__PURE__ */ new Error(`request timed out after ${REQUEST_TIMEOUT / 1e3}s`)));
 		request.on("error", (error) => {
 			reject(/* @__PURE__ */ new Error(`Doppler API Error: ${error}`));
 		});
@@ -17309,20 +17352,22 @@ async function _oidcAuth(identityId, oidcToken, apiDomain) {
 * @param {string | null} [dopplerProject]
 * @param {string | null} [dopplerConfig]
 * @param {string} apiDomain 
+* @param {object} [retryOptions]
 * @returns {Promise<Record<string, Record>>}
 */
-async function fetch(dopplerToken, dopplerProject, dopplerConfig, apiDomain) {
-	return withRetry(() => _fetch(dopplerToken, dopplerProject, dopplerConfig, apiDomain));
+async function fetch(dopplerToken, dopplerProject, dopplerConfig, apiDomain, retryOptions) {
+	return withRetry(() => _fetch(dopplerToken, dopplerProject, dopplerConfig, apiDomain), retryOptions);
 }
 /**
 * Exchange an OIDC token for a short lived Doppler service account token with retry logic
 * @param {string} identityId 
-* @param {string} oidcToken 
+* @param {Function} getOidcToken - Fetches a GitHub OIDC token; called on every attempt, since the API rejects a reused one
 * @param {string} apiDomain 
+* @param {object} [retryOptions]
 * @returns {Promise<string>}
 */
-async function oidcAuth(identityId, oidcToken, apiDomain) {
-	return withRetry(() => _oidcAuth(identityId, oidcToken, apiDomain));
+async function oidcAuth(identityId, getOidcToken, apiDomain, retryOptions) {
+	return withRetry(async () => _oidcAuth(identityId, await getOidcToken(), apiDomain), retryOptions);
 }
 //#endregion
 //#region src/index.js
@@ -17336,11 +17381,14 @@ if (process.env.NODE_ENV === "development" && process.env.DOPPLER_TOKEN) {
 const AUTH_METHOD = getInput("auth-method");
 const API_DOMAIN = getInput("doppler-api-domain");
 let DOPPLER_TOKEN = "";
+const RETRY_OPTIONS = { onRetry: (error, attempt, delay) => info(`Attempt ${attempt} failed, retrying in ${(delay / 1e3).toFixed(1)}s: ${String(error?.message ?? error).replace(/\s+/g, " ")}`) };
 if (AUTH_METHOD === "oidc") {
 	const DOPPLER_IDENTITY_ID = getInput("doppler-identity-id", { required: true });
-	const oidcToken = await getIDToken();
-	setSecret(oidcToken);
-	DOPPLER_TOKEN = await oidcAuth(DOPPLER_IDENTITY_ID, oidcToken, API_DOMAIN);
+	if (!process.env.ACTIONS_ID_TOKEN_REQUEST_URL || !process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN) {
+		setFailed("auth-method \"oidc\" requires the `id-token: write` permission on the job or workflow");
+		process.exit();
+	}
+	DOPPLER_TOKEN = await oidcAuth(DOPPLER_IDENTITY_ID, getIDToken, API_DOMAIN, RETRY_OPTIONS);
 } else if (AUTH_METHOD === "token") DOPPLER_TOKEN = getInput("doppler-token", { required: true });
 else {
 	setFailed("Unsupported auth-method");
@@ -17364,7 +17412,7 @@ if (IS_SA_TOKEN && !(DOPPLER_PROJECT && DOPPLER_CONFIG)) {
 	setFailed("doppler-project and doppler-config inputs are required when using a Service Account token");
 	process.exit();
 }
-const secrets = await fetch(DOPPLER_TOKEN, DOPPLER_PROJECT, DOPPLER_CONFIG, API_DOMAIN);
+const secrets = await fetch(DOPPLER_TOKEN, DOPPLER_PROJECT, DOPPLER_CONFIG, API_DOMAIN, RETRY_OPTIONS);
 for (const [key, secret] of Object.entries(secrets)) {
 	const value = secret.computed || "";
 	setOutput(key, value);
