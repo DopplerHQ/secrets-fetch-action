@@ -17429,6 +17429,7 @@ function parseRetryAfter(header) {
 * Determines if an error should be retried: everything except a non-transient API 4xx or a permanent OIDC token failure
 */
 function shouldRetry(error) {
+	if (error instanceof TypeError) return false;
 	if (!(error instanceof DopplerApiError)) {
 		const message = String(error?.message ?? "");
 		return !/^\s*Error Code : (?!429)4\d\d$/m.test(message) && !message.includes("Response json body do not have ID Token field");
@@ -17489,6 +17490,7 @@ async function _fetch(dopplerToken, dopplerProject, dopplerConfig, apiDomain) {
 		}, (res) => {
 			let payload = "";
 			res.on("data", (data) => payload += data);
+			res.on("error", (error) => reject(/* @__PURE__ */ new Error(`Doppler API Error: ${error}`)));
 			res.on("end", () => {
 				if (res.statusCode === 200) resolve(JSON.parse(payload).secrets);
 				else try {
@@ -17531,6 +17533,7 @@ async function _oidcAuth(identityId, oidcToken, apiDomain) {
 		}, (res) => {
 			let payload = "";
 			res.on("data", (data) => payload += data);
+			res.on("error", (error) => reject(/* @__PURE__ */ new Error(`Doppler API Error: ${error}`)));
 			res.on("end", () => {
 				if (res.statusCode === 200) resolve(JSON.parse(payload).token);
 				else try {

@@ -49,6 +49,10 @@ function parseRetryAfter(header) {
  * Determines if an error should be retried: everything except a non-transient API 4xx or a permanent OIDC token failure
  */
 export function shouldRetry(error) {
+  // An invalid doppler-api-domain fails building the request URL, which won't change on retry
+  if (error instanceof TypeError) {
+    return false;
+  }
   if (!(error instanceof DopplerApiError)) {
     // Network errors and getIDToken() failures. getIDToken() only reports the status code in its message, so match its
     // status line. Don't retry a 4xx other than 429, or a missing token (what a 404 returns). The typo is @actions/core's
@@ -131,6 +135,8 @@ async function _fetch(dopplerToken, dopplerProject, dopplerConfig, apiDomain) {
         (res) => {
           let payload = "";
           res.on("data", (data) => (payload += data));
+          // A connection dropped mid-body errors the response, not the request
+          res.on("error", (error) => reject(new Error(`Doppler API Error: ${error}`)));
           res.on("end", () => {
             if (res.statusCode === 200) {
               resolve(JSON.parse(payload).secrets);
@@ -187,6 +193,8 @@ async function _oidcAuth(identityId, oidcToken, apiDomain) {
         (res) => {
           let payload = "";
           res.on("data", (data) => (payload += data));
+          // A connection dropped mid-body errors the response, not the request
+          res.on("error", (error) => reject(new Error(`Doppler API Error: ${error}`)));
           res.on("end", () => {
             if (res.statusCode === 200) {
               resolve(JSON.parse(payload).token);

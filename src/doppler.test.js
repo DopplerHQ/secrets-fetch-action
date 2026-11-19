@@ -374,6 +374,43 @@ describe("Doppler API Client", () => {
       );
       assert.strictEqual(attemptCount, 8);
     });
+
+    it("should retry when the connection drops mid-body", async () => {
+      let attemptCount = 0;
+      const mockSecrets = { KEY: { computed: "value", computedVisibility: "masked" } };
+
+      mock.method(https, 'get', (url, options, callback) => {
+        attemptCount++;
+        const dropped = attemptCount < 2;
+        const mockResponse = {
+          statusCode: 200,
+          headers: { "content-type": "application/json" },
+          on: (event, handler) => {
+            if (event === "data") {
+              handler(dropped ? '{"secrets": {' : JSON.stringify({ secrets: mockSecrets }));
+            } else if (event === "error" && dropped) {
+              handler(new Error("aborted"));
+            } else if (event === "end" && !dropped) {
+              handler();
+            }
+            return mockResponse;
+          },
+        };
+        callback(mockResponse);
+        return { on: () => {} };
+      });
+
+      const result = await fetch("dp.st.test", null, null, "api.doppler.com", { baseDelay: 1 });
+      assert.strictEqual(attemptCount, 2);
+      assert.deepStrictEqual(result, mockSecrets);
+    });
+
+    it("should NOT retry an invalid API domain", async () => {
+      await assert.rejects(
+        async () => await fetch("dp.st.test", null, null, "not a domain", { baseDelay: 1 }),
+        (error) => error instanceof TypeError && !error.message.includes("gave up after")
+      );
+    });
   });
 
   describe("oidcAuth() - Happy Path", () => {
@@ -491,6 +528,36 @@ describe("Doppler API Client", () => {
         }
       );
       assert.strictEqual(attemptCount, 1);
+    });
+
+    it("should retry when the connection drops mid-body", async () => {
+      let attemptCount = 0;
+      const mockToken = "dp.st.generated-token";
+
+      mock.method(https, 'request', (_url, _options, callback) => {
+        attemptCount++;
+        const dropped = attemptCount < 2;
+        const mockResponse = {
+          statusCode: 200,
+          headers: { "content-type": "application/json" },
+          on: (event, handler) => {
+            if (event === "data") {
+              handler(dropped ? '{"tok' : JSON.stringify({ token: mockToken }));
+            } else if (event === "error" && dropped) {
+              handler(new Error("aborted"));
+            } else if (event === "end" && !dropped) {
+              handler();
+            }
+            return mockResponse;
+          },
+        };
+        callback(mockResponse);
+        return { on: () => {}, write: () => {}, end: () => {} };
+      });
+
+      const result = await oidcAuth("identity-123", async () => "oidc-token", "api.doppler.com", { baseDelay: 1 });
+      assert.strictEqual(attemptCount, 2);
+      assert.strictEqual(result, mockToken);
     });
 
     it("should retry on 400 when the API cannot fetch GitHub's JWKS, with a fresh OIDC token", async () => {
