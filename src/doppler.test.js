@@ -560,7 +560,7 @@ describe("Doppler API Client", () => {
       assert.strictEqual(result, mockToken);
     });
 
-    it("should retry on 400 when the API cannot fetch GitHub's JWKS, with a fresh OIDC token", async () => {
+    it("should retry on 502 when the API cannot fetch GitHub's JWKS, with a fresh OIDC token", async () => {
       let attemptCount = 0;
       const mockToken = "dp.st.generated-token";
       const sentTokens = [];
@@ -568,7 +568,7 @@ describe("Doppler API Client", () => {
       mock.method(https, 'request', (_url, _options, callback) => {
         attemptCount++;
         const mockResponse = {
-          statusCode: attemptCount < 2 ? 400 : 200,
+          statusCode: attemptCount < 2 ? 502 : 200,
           headers: { "content-type": "application/json; charset=utf-8" },
           on: (event, handler) => {
             if (event === "data") {
@@ -655,18 +655,6 @@ describe("Doppler API Client", () => {
       assert.strictEqual(shouldRetry(new DopplerApiError("Doppler API Error: Invalid token", 401)), false);
       assert.strictEqual(shouldRetry(new DopplerApiError("Doppler API Error: Forbidden", 403)), false);
       assert.strictEqual(shouldRetry(new DopplerApiError("Doppler API Error: Unable to validate OIDC JWT token: claim \"sub\" does not match", 400)), false);
-      // Even when the message suggests trying again
-      assert.strictEqual(shouldRetry(new DopplerApiError("Doppler API Error: Unable to authenticate. Please check your credentials and try again.", 400)), false);
-    });
-
-    it("should retry a 400 when the API cannot reach the OIDC provider", () => {
-      assert.strictEqual(shouldRetry(new DopplerApiError("Doppler API Error: Unable to validate OIDC JWT token: could not retrieve JSON Web Key Set", 400)), true);
-      assert.strictEqual(shouldRetry(new DopplerApiError("Doppler API Error: Unable to retrieve Open ID Discovery Document", 400)), true);
-    });
-
-    it("should NOT retry a 400 for an OIDC provider response that is too large", () => {
-      assert.strictEqual(shouldRetry(new DopplerApiError("Doppler API Error: Unable to validate OIDC JWT token: could not retrieve JSON Web Key Set: Response exceeds 1048576 bytes", 400)), false);
-      assert.strictEqual(shouldRetry(new DopplerApiError("Doppler API Error: Unable to retrieve Open ID Discovery Document: Response exceeds 1048576 bytes", 400)), false);
     });
 
     describe("GitHub OIDC token request errors", () => {

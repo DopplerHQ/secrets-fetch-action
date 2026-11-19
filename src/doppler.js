@@ -11,9 +11,6 @@ const REQUEST_TIMEOUT = 35_000;
 // Caps a longer Retry-After, which would otherwise push the retry past TOTAL_TIMEOUT and end the call
 const MAX_RETRY_AFTER = 60_000;
 const TRANSIENT_STATUS_CODES = [408, 425, 429];
-// Identifies API 400s caused by a temporary failure to reach the OIDC provider, so they're retried. Anchored to exclude
-// the permanent "Response exceeds" variant
-const TRANSIENT_MESSAGES = /(could not retrieve JSON Web Key Set|Unable to retrieve Open ID Discovery Document)$/;
 
 /**
  * Custom error class for Doppler API errors that the retry wrapper can use to determine if an error should be retried
@@ -59,8 +56,8 @@ export function shouldRetry(error) {
     const message = String(error?.message ?? "");
     return !/^\s*Error Code : (?!429)4\d\d$/m.test(message) && !message.includes("Response json body do not have ID Token field");
   }
-  const { statusCode, message } = error;
-  return statusCode >= 500 || (statusCode >= 100 && statusCode <= 199) || TRANSIENT_STATUS_CODES.includes(statusCode) || TRANSIENT_MESSAGES.test(message);
+  const { statusCode } = error;
+  return statusCode >= 500 || (statusCode >= 100 && statusCode <= 199) || TRANSIENT_STATUS_CODES.includes(statusCode);
 }
 
 /**
